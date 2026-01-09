@@ -68,22 +68,29 @@ impl<T: Read> Parser<T> {
         }
     }
 
-    fn chunk_delimiter_offsets(&self, chunk: &[u8; CHUNK_SIZE]) -> (u64, u64, u64) {
+    fn chunk_delimiter_offsets(&self, chunk: &[u8; CHUNK_SIZE], valid_bytes: usize) -> (u64, u64, u64) {
         let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_array(*chunk);
         let delimiter_locations = simd_line.simd_eq(Simd::splat(self.dialect.delimiter as u8));
         let quote_locations = simd_line.simd_eq(Simd::splat(self.dialect.quotechar as u8));
         // xor with current inside quotes state to get correct quote mask
         let quote_mask = quote_locations.to_bitmask() ^ self.inside_quotes as u64;
         let inside_quotes = clmul64!(!0u64, quote_mask) as u64;
-        let filtered_delimiter_locations: u64 = delimiter_locations.to_bitmask() & !inside_quotes;
+        let mut filtered_delimiter_locations: u64 = delimiter_locations.to_bitmask() & !inside_quotes;
 
         let newline_locations = simd_line.simd_eq(Simd::splat(b'\n')).to_bitmask();
         let return_locations = simd_line.simd_eq(Simd::splat(b'\r')).to_bitmask();
         let newline_return_locations = return_locations & newline_locations >> 1;
         let all_newline_locations = newline_locations | newline_return_locations | return_locations;
         let filtered_newline_locations: u64 = all_newline_locations & !inside_quotes;
-
-        return (filtered_delimiter_locations, filtered_newline_locations, quote_locations.to_bitmask())
+        let mut filtered_quote_locations = quote_locations.to_bitmask();
+        // ignore any delimiter offsets past the newline
+        if valid_bytes < 64 {
+            let mask_limit = 1 << (valid_bytes-1);
+            let mask = mask_limit & (!mask_limit + 1);
+            filtered_delimiter_locations = filtered_delimiter_locations & (mask | (mask - 1));
+            filtered_quote_locations = filtered_quote_locations & (mask | (mask - 1));
+        }
+        return (filtered_delimiter_locations, filtered_newline_locations, filtered_quote_locations)
     }
 
     fn escape_quotes(&self, tokens: Vec<String>) -> Vec<String>{
@@ -113,16 +120,10 @@ impl<T: Read> Parser<T> {
             }
             // only copy at max CHUNK_SIZE bytes
             let n = min(buffer.len(), CHUNK_SIZE);
-            if n < CHUNK_SIZE {
-                // zero out rest of chunk
-                for i in n..CHUNK_SIZE {
-                    chunk[i] = 0u8;
-                }
-            }
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
             let mut last_delimiter_offset: usize = 0;
-            let (delimiter_offsets, newline_offsets, quote_offsets) = self.chunk_delimiter_offsets(&chunk);
+            let (delimiter_offsets, newline_offsets, quote_offsets) = self.chunk_delimiter_offsets(&chunk, n);
             for i in 0..64 {
                 if newline_offsets & (1 << i) != 0 {
                     field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
