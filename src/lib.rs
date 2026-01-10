@@ -127,7 +127,7 @@ impl<T: Read> Parser<T> {
             for i in 0..64 {
                 if newline_offsets & (1 << i) != 0 {
                     field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
-                    let s = match String::from_utf8(field_buf.clone()) {
+                    let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
                         Ok(v) => v,
                         Err(e) => break,
                     };
@@ -137,12 +137,11 @@ impl<T: Read> Parser<T> {
                 }
                 if delimiter_offsets & (1 << i) != 0 {
                     field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
-                    let s = match String::from_utf8(field_buf.clone()) {
+                    let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
                         Ok(v) => v,
                         Err(e) => break,
                     };
                     new_tokens.push(s);
-                    field_buf.clear();
                     last_delimiter_offset = i+1;
                 }
                 if quote_offsets & (1 << i) != 0 {
