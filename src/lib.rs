@@ -122,31 +122,42 @@ impl<T: Read> Parser<T> {
             let n = min(buffer.len(), CHUNK_SIZE);
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
-            let mut last_delimiter_offset: usize = 0;
             let (delimiter_offsets, newline_offsets, quote_offsets) = self.chunk_delimiter_offsets(&chunk, n);
-            for i in 0..64 {
-                if newline_offsets & (1 << i) != 0 {
-                    field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
-                    let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
-                        Ok(v) => v,
-                        Err(e) => break,
-                    };
-                    new_tokens.push(s);
-                    self.bufreader.consume(min(n, i+1));
-                    return self.escape_quotes(new_tokens);
+            let mut delimiter_positions = Vec::new();
+            let mut delim_offsets = delimiter_offsets;
+            let first_newline = newline_offsets.trailing_zeros() as usize;
+            let quote_count = quote_offsets.count_ones() as usize;
+            while delim_offsets != 0 {
+                let pos = delim_offsets.trailing_zeros() as usize;
+                if pos >= first_newline {
+                    break
                 }
-                if delimiter_offsets & (1 << i) != 0 {
-                    field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
-                    let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
-                        Ok(v) => v,
-                        Err(e) => break,
-                    };
-                    new_tokens.push(s);
-                    last_delimiter_offset = i+1;
-                }
-                if quote_offsets & (1 << i) != 0 {
-                    self.inside_quotes = !self.inside_quotes;
-                }
+                delimiter_positions.push(pos as usize);
+                delim_offsets &= delim_offsets - 1;
+            }
+            let mut last_delimiter_offset: usize = 0;
+            println!("Delimiter positions: {:?}", delimiter_positions);
+            for i in delimiter_positions {
+                field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
+                let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
+                    Ok(v) => v,
+                    Err(e) => break,
+                };
+                new_tokens.push(s);
+                last_delimiter_offset = i+1;
+            }
+            if quote_count % 2 != 0 {
+                self.inside_quotes = !self.inside_quotes;
+            }
+            if first_newline != 64 {
+                field_buf.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
+                let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
+                    Ok(v) => v,
+                    Err(e) => break,
+                };
+                new_tokens.push(s);
+                self.bufreader.consume(min(n, first_newline+1));
+                return self.escape_quotes(new_tokens);
             }
             field_buf.extend_from_slice(&chunk[last_delimiter_offset..n]);
             self.bufreader.consume(n);
