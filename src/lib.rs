@@ -93,15 +93,19 @@ impl<T: Read> Parser<T> {
         return (filtered_delimiter_locations, filtered_newline_locations, filtered_quote_locations)
     }
 
-    fn escape_quotes(&self, tokens: Vec<String>) -> Vec<String>{
-        let mut new_tokens = tokens.clone();
-        for token in new_tokens.iter_mut() {
-            if token.len() > 0 && token.chars().next().unwrap() == self.dialect.quotechar {
-                *token = token[1..token.len()-1].to_string();
-            }
-            *token = token.replace(&format!("{}{}", self.dialect.quotechar, self.dialect.quotechar), &self.dialect.quotechar.to_string());
+    fn escape_quotes(&self, s: String) -> String {
+        return s.replace(&format!("{}{}", self.dialect.quotechar, self.dialect.quotechar), &self.dialect.quotechar.to_string());
+    }
+
+    fn field_to_string(&self, field_buf: &mut Vec<u8>) -> Option<String> {
+        if field_buf.len() > 1 && field_buf[0] == self.dialect.quotechar as u8 {
+            field_buf.remove(0);
+            field_buf.remove(field_buf.len()-1);
         }
-        return new_tokens
+        match String::from_utf8(std::mem::take(field_buf)) {
+            Ok(v) => Some(self.escape_quotes(v)),
+            Err(e) => None,
+        }
     }
     fn process_buffer_chunks(&mut self) -> Vec<String> {
         let mut new_tokens = Vec::<String>::new();
@@ -122,28 +126,22 @@ impl<T: Read> Parser<T> {
             let n = min(buffer.len(), CHUNK_SIZE);
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
-            let (delimiter_offsets, newline_offsets, quote_offsets) = self.chunk_delimiter_offsets(&chunk, n);
+            let (mut delimiter_offsets, newline_offsets, quote_offsets) = self.chunk_delimiter_offsets(&chunk, n);
             let mut delimiter_positions = Vec::new();
-            let mut delim_offsets = delimiter_offsets;
             let first_newline = newline_offsets.trailing_zeros() as usize;
             let quote_count = quote_offsets.count_ones() as usize;
-            while delim_offsets != 0 {
-                let pos = delim_offsets.trailing_zeros() as usize;
+            while delimiter_offsets != 0 {
+                let pos = delimiter_offsets.trailing_zeros() as usize;
                 if pos >= first_newline {
                     break
                 }
-                delimiter_positions.push(pos as usize);
-                delim_offsets &= delim_offsets - 1;
+                delimiter_positions.push(pos);
+                delimiter_offsets &= delimiter_offsets - 1;
             }
             let mut last_delimiter_offset: usize = 0;
-            println!("Delimiter positions: {:?}", delimiter_positions);
             for i in delimiter_positions {
                 field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
-                let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
-                    Ok(v) => v,
-                    Err(e) => break,
-                };
-                new_tokens.push(s);
+                new_tokens.push(self.field_to_string(&mut field_buf).expect("Invalid UTF-8 sequence"));
                 last_delimiter_offset = i+1;
             }
             if quote_count % 2 != 0 {
@@ -151,13 +149,9 @@ impl<T: Read> Parser<T> {
             }
             if first_newline != 64 {
                 field_buf.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
-                let s = match String::from_utf8(std::mem::take(&mut field_buf)) {
-                    Ok(v) => v,
-                    Err(e) => break,
-                };
-                new_tokens.push(s);
+                new_tokens.push(self.field_to_string(&mut field_buf).expect("Invalid UTF-8 sequence"));
                 self.bufreader.consume(min(n, first_newline+1));
-                return self.escape_quotes(new_tokens);
+                return new_tokens;
             }
             field_buf.extend_from_slice(&chunk[last_delimiter_offset..n]);
             self.bufreader.consume(n);
