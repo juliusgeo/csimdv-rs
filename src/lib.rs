@@ -1,5 +1,6 @@
 #![feature(portable_simd)]
 #![feature(test)]
+
 use std::cmp::{max, min};
 use std::io::{BufRead, BufReader, Read};
 use std::simd::Simd;
@@ -144,14 +145,14 @@ impl<T: Read> Parser<T> {
                 new_tokens.push(self.field_to_string(&mut field_buf).expect("Invalid UTF-8 sequence"));
                 last_delimiter_offset = i+1;
             }
-            if quote_count % 2 != 0 {
-                self.inside_quotes = !self.inside_quotes;
-            }
             if first_newline != 64 {
                 field_buf.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
                 new_tokens.push(self.field_to_string(&mut field_buf).expect("Invalid UTF-8 sequence"));
                 self.bufreader.consume(min(n, first_newline+1));
                 return new_tokens;
+            }
+            if quote_count % 2 != 0 {
+                self.inside_quotes = !self.inside_quotes;
             }
             field_buf.extend_from_slice(&chunk[last_delimiter_offset..n]);
             self.bufreader.consume(n);
@@ -288,7 +289,6 @@ mod tests {
             }
         }
         b.iter(|| parse_file(&mut p));
-        // assert_eq!(result, vec![", \"", "1", "2", "\"300, 400\"",  "4"])
     }
 
 
