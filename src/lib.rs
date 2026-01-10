@@ -9,6 +9,7 @@ extern crate test;
 
 const CHUNK_SIZE: usize = 64;
 
+const MAX_FIELD_SIZE: usize = 1 << 17;
 #[macro_export]
 macro_rules! clmul64 {
     ($a:expr, $b:expr) => {{
@@ -54,10 +55,64 @@ pub fn default_dialect() -> Dialect {
     }
 }
 
+
+pub struct FieldBuffer {
+    buf: [u8; MAX_FIELD_SIZE],
+    end_offset: usize,
+    start_offset: usize,
+    dialect: Dialect
+}
+
+// struct to hold the contents of an individual field--with a buffer backing that is not reallocated on every line read
+impl FieldBuffer {
+    pub fn new(dialect: Dialect) -> Self {
+        return FieldBuffer {
+            buf: [0u8; MAX_FIELD_SIZE],
+            end_offset: 0,
+            start_offset: 0,
+            dialect: dialect,
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.end_offset = 0;
+        self.start_offset = 0;
+    }
+
+    pub fn append(&mut self, data: &[u8], n_bytes: usize) {
+        if self.end_offset + n_bytes >= MAX_FIELD_SIZE {
+            panic!("Field size exceeds maximum allowed size");
+        }
+        self.buf[self.end_offset..self.end_offset +n_bytes].copy_from_slice(data);
+        self.end_offset += n_bytes;
+    }
+    fn escape_quotes(&self, s: String) -> String {
+        return s.replace(&format!("{}{}", self.dialect.quotechar, self.dialect.quotechar), &self.dialect.quotechar.to_string());
+    }
+    pub fn to_string(&self) -> Option<String> {
+        match str::from_utf8(&self.buf[self.start_offset..self.end_offset]) {
+            Ok(v) => Some(v.to_string()),
+            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+        }
+    }
+
+    pub fn to_escaped_string(&mut self) -> Option<String> {
+        if self.end_offset > 1 && self.buf[self.start_offset] == self.dialect.quotechar as u8 && self.buf[self.end_offset -1] == self.dialect.quotechar as u8 {
+            self.start_offset += 1;
+            self.end_offset -= 1;
+            let unescaped = self.escape_quotes(self.to_string().unwrap());
+            return Some(unescaped);
+        }
+        return self.to_string()
+    }
+}
+
+
 pub struct Parser<T: Read> {
     pub dialect: Dialect,
     pub inside_quotes: bool,
     pub bufreader: BufReader<T>,
+    field_buffer: FieldBuffer,
 }
 impl<T: Read> Parser<T> {
     pub fn new(dialect: Dialect, bufreader: BufReader<T>) -> Self {
@@ -65,10 +120,20 @@ impl<T: Read> Parser<T> {
             dialect: dialect,
             inside_quotes: false,
             bufreader: bufreader,
+            field_buffer: FieldBuffer::new(dialect),
         }
     }
 
-    fn chunk_delimiter_offsets(&self, chunk: &[u8; CHUNK_SIZE], valid_bytes: usize) -> (u64, u64, u64) {
+    fn mask_invalid_bytes(&self,valid_bytes: usize) -> u64 {
+        if valid_bytes >= 64 {
+            return !0u64;
+        }
+        let mask_limit = 1 << (valid_bytes-1);
+        let mask = mask_limit & (!mask_limit + 1);
+        return mask | (mask - 1);
+    }
+
+    fn chunk_delimiter_offsets(&self, chunk: &[u8; CHUNK_SIZE], valid_bytes: usize) -> (u64, usize, u32) {
         let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_array(*chunk);
         let delimiter_locations = simd_line.simd_eq(Simd::splat(self.dialect.delimiter as u8));
         let quote_locations = simd_line.simd_eq(Simd::splat(self.dialect.quotechar as u8));
@@ -84,33 +149,26 @@ impl<T: Read> Parser<T> {
         let filtered_newline_locations: u64 = all_newline_locations & !inside_quotes;
         let mut filtered_quote_locations = quote_locations.to_bitmask();
         // ignore any delimiter offsets past the newline
-        if valid_bytes < 64 {
-            let mask_limit = 1 << (valid_bytes-1);
-            let mask = mask_limit & (!mask_limit + 1);
-            filtered_delimiter_locations = filtered_delimiter_locations & (mask | (mask - 1));
-            filtered_quote_locations = filtered_quote_locations & (mask | (mask - 1));
+        let mut mask = self.mask_invalid_bytes(valid_bytes);
+        let first_newline = filtered_newline_locations.trailing_zeros() as usize;
+        // if we have a newline we want to mask out any delimiters/quotes past it
+        if filtered_newline_locations != 0 {
+            if first_newline != 0 {
+                let newline_mask = self.mask_invalid_bytes(first_newline);
+                mask &= newline_mask;
+            }
         }
-        return (filtered_delimiter_locations, filtered_newline_locations, filtered_quote_locations)
+        filtered_delimiter_locations = filtered_delimiter_locations & mask;
+        filtered_quote_locations = filtered_quote_locations & mask;
+
+        return (filtered_delimiter_locations, first_newline, filtered_quote_locations.count_ones())
     }
 
-    fn escape_quotes(&self, s: String) -> String {
-        return s.replace(&format!("{}{}", self.dialect.quotechar, self.dialect.quotechar), &self.dialect.quotechar.to_string());
-    }
 
-    fn field_to_string(&self, field_buf: &mut Vec<u8>) -> Option<String> {
-        if field_buf.len() > 1 && field_buf[0] == self.dialect.quotechar as u8 {
-            field_buf.remove(0);
-            field_buf.remove(field_buf.len()-1);
-        }
-        match String::from_utf8(std::mem::take(field_buf)) {
-            Ok(v) => Some(self.escape_quotes(v)),
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        }
-    }
     fn process_buffer_chunks(&mut self) -> Vec<String> {
         let mut new_tokens = Vec::<String>::new();
         let mut chunk = [0u8; CHUNK_SIZE];
-        let mut field_buf = Vec::<u8>::new();
+        self.field_buffer.clear();
         loop {
             // fill up the buffer and copy to chunk
             let b = self.bufreader.fill_buf();
@@ -126,10 +184,11 @@ impl<T: Read> Parser<T> {
             let n = min(buffer.len(), CHUNK_SIZE);
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
-            let (mut delimiter_offsets, newline_offsets, quote_offsets) = self.chunk_delimiter_offsets(&chunk, n);
+            let (mut delimiter_offsets, first_newline, quote_count) = self.chunk_delimiter_offsets(&chunk, n);
             let mut delimiter_positions = Vec::new();
-            let first_newline = newline_offsets.trailing_zeros() as usize;
-            let quote_count = quote_offsets.count_ones() as usize;
+            if quote_count % 2 != 0 {
+                self.inside_quotes = !self.inside_quotes;
+            }
             while delimiter_offsets != 0 {
                 let pos = delimiter_offsets.trailing_zeros() as usize;
                 if pos >= first_newline {
@@ -140,20 +199,21 @@ impl<T: Read> Parser<T> {
             }
             let mut last_delimiter_offset: usize = 0;
             for i in delimiter_positions {
-                field_buf.extend_from_slice(&chunk[last_delimiter_offset..i]);
-                new_tokens.push(self.field_to_string(&mut field_buf).expect("Invalid UTF-8 sequence"));
+                let diff = i - last_delimiter_offset;
+                self.field_buffer.append(&chunk[last_delimiter_offset..i], diff);
+                new_tokens.push(self.field_buffer.to_escaped_string().expect("Invalid UTF-8 sequence"));
                 last_delimiter_offset = i+1;
+                self.field_buffer.clear();
             }
             if first_newline != 64 {
-                field_buf.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
-                new_tokens.push(self.field_to_string(&mut field_buf).expect("Invalid UTF-8 sequence"));
+                let diff = first_newline - last_delimiter_offset;
+                self.field_buffer.append(&chunk[last_delimiter_offset..first_newline], diff);
+                new_tokens.push(self.field_buffer.to_escaped_string().expect("Invalid UTF-8 sequence"));
                 self.bufreader.consume(min(n, first_newline+1));
                 return new_tokens;
             }
-            if quote_count % 2 != 0 {
-                self.inside_quotes = !self.inside_quotes;
-            }
-            field_buf.extend_from_slice(&chunk[last_delimiter_offset..n]);
+            let diff = n - last_delimiter_offset;
+            self.field_buffer.append(&chunk[last_delimiter_offset..n], diff);
             self.bufreader.consume(n);
         }
         return new_tokens
@@ -200,6 +260,7 @@ mod tests {
             dialect: default_dialect(),
             inside_quotes: true,
             bufreader: reader_from_str(line),
+            field_buffer: FieldBuffer::new(default_dialect()),
         };
         let result = p.read_line();
         assert_eq!(result, vec![", \"".to_string(), "1".to_string(), "2".to_string(), "300, 400".to_string(),  "4".to_string()])
@@ -212,6 +273,7 @@ mod tests {
             dialect: default_dialect(),
             inside_quotes: true,
             bufreader: reader_from_str(line),
+            field_buffer: FieldBuffer::new(default_dialect()),
         };
         let result = p.read_line();
         assert_eq!(result, vec![", \"".to_string(), "1".to_string(), "2".to_string(), "300,\r\n 400".to_string(),  "4".to_string()])
@@ -270,17 +332,25 @@ mod tests {
         let line = "20120923_TB@DAL,3,29,12,TB,DAL,3,8,78,\"(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"\"seam\"\" route; Carter closest defender.\",7,10,2012\n";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let result = p.read_line();
-        println!("{:?}", result);
         assert_eq!(result[result.len()-4], "(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"seam\" route; Carter closest defender.".to_string());
         assert_eq!(result[result.len()-1], "2012");
+    }
+
+    #[test]
+    fn test_delimiter_masking() {
+        let line = "";
+        let mut p = Parser::new(default_dialect(), reader_from_str(line));
+        let mask = p.mask_invalid_bytes(16);
+        assert_eq!(mask & 1 << 17 , 0);
     }
     #[test]
     fn test_parse_file() {
         let file = File::open("examples/nfl.csv").unwrap();
         let p = Parser::new(default_dialect(), BufReader::new(file));
-        for line in p {
+        for (idx, line) in p.enumerate() {
             let _ = line;
             assert_ne!(line.len(), 0);
+
         }
     }
 
@@ -294,6 +364,14 @@ mod tests {
             }
         }
         b.iter(|| parse_file());
+    }
+
+    #[bench]
+    fn bench_parse_line(b: &mut Bencher) {
+        let file = File::open("examples/nfl.csv").unwrap();
+        let p = Parser::new(default_dialect(), BufReader::new(file));
+        let mut pp = p.into_iter();
+        b.iter(|| pp.next());
     }
 
 
