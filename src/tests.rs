@@ -106,7 +106,7 @@ use std::fs::File;
     fn test_delimiter_masking() {
         let line = "";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
-        let mask = p.mask_invalid_bytes(16);
+        let mask = Parser::<File>::mask_invalid_bytes(16);
         assert_eq!(mask & 1 << 17 , 0);
     }
     #[test]
@@ -142,11 +142,21 @@ use std::fs::File;
 
 
     #[bench]
-    fn bench_parse_line_simd_csv(b: &mut Bencher) {
-        let file = File::open("examples/nfl.csv").unwrap();
-        let p = Parser::new(default_dialect(), BufReader::new(file));
-        let mut pp = p.into_iter();
-        b.iter(|| pp.next());
+    fn bench_parse_file_simd_csv(b: &mut Bencher) {
+        use simd_csv::{Reader, ByteRecord};
+        fn parse_file(){
+            let file = File::open("examples/nfl.csv").unwrap();
+
+            let mut reader = Reader::from_reader(file);
+            let mut record = ByteRecord::new();
+
+            while reader.read_byte_record(&mut record).unwrap() {
+                for cell in record.iter() {
+                    let _ = String::from_utf8(cell.to_vec()).unwrap();
+                }
+            }
+        }
+        b.iter(|| parse_file());
     }
 
 

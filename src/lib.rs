@@ -100,7 +100,7 @@ impl<T: Read> Parser<T> {
         }
     }
 
-    fn mask_invalid_bytes(&self,valid_bytes: usize) -> u64 {
+    fn mask_invalid_bytes(valid_bytes: usize) -> u64 {
         if valid_bytes >= 64 {
             return !0u64;
         }
@@ -109,12 +109,12 @@ impl<T: Read> Parser<T> {
         return mask | (mask - 1);
     }
 
-    fn chunk_delimiter_offsets(&self, chunk: &[u8; CHUNK_SIZE], valid_bytes: usize) -> (u64, usize, u32) {
+    fn chunk_delimiter_offsets(chunk: &[u8; CHUNK_SIZE], valid_bytes: usize, dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
         let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
-        let delimiter_locations = simd_line.simd_eq(Simd::splat(self.dialect.delimiter as u8));
-        let quote_locations = simd_line.simd_eq(Simd::splat(self.dialect.quotechar as u8));
+        let delimiter_locations = simd_line.simd_eq(Simd::splat(dialect.delimiter as u8));
+        let quote_locations = simd_line.simd_eq(Simd::splat(dialect.quotechar as u8));
         // xor with current inside quotes state to get correct quote mask
-        let quote_mask = quote_locations.to_bitmask() ^ self.inside_quotes as u64;
+        let quote_mask = quote_locations.to_bitmask() ^ inside_quotes as u64;
         let inside_quotes = clmul64!(!0u64, quote_mask) as u64;
         let mut filtered_delimiter_locations: u64 = delimiter_locations.to_bitmask() & !inside_quotes;
 
@@ -125,12 +125,12 @@ impl<T: Read> Parser<T> {
         let filtered_newline_locations: u64 = all_newline_locations & !inside_quotes;
         let mut filtered_quote_locations = quote_locations.to_bitmask();
         // ignore any delimiter offsets past the newline
-        let mut mask = self.mask_invalid_bytes(valid_bytes);
+        let mut mask = Self::mask_invalid_bytes(valid_bytes);
         let first_newline = filtered_newline_locations.trailing_zeros() as usize;
         // if we have a newline we want to mask out any delimiters/quotes past it
         if filtered_newline_locations != 0 {
             if first_newline != 0 {
-                let newline_mask = self.mask_invalid_bytes(first_newline);
+                let newline_mask = Self::mask_invalid_bytes(first_newline);
                 mask &= newline_mask;
             }
         }
@@ -160,7 +160,7 @@ impl<T: Read> Parser<T> {
             let n = min(buffer.len(), CHUNK_SIZE);
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
-            let (mut delimiter_offsets, first_newline, quote_count) = self.chunk_delimiter_offsets(&chunk, n);
+            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(&chunk, n, self.dialect, self.inside_quotes);
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;
             }
