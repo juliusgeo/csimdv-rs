@@ -185,25 +185,22 @@ impl<T: Read> Parser<T> {
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
             let (mut delimiter_offsets, first_newline, quote_count) = self.chunk_delimiter_offsets(&chunk, n);
-            let mut delimiter_positions = Vec::new();
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;
             }
+            let mut last_delimiter_offset: usize = 0;
+            // iterate over the offsets
             while delimiter_offsets != 0 {
                 let pos = delimiter_offsets.trailing_zeros() as usize;
                 if pos >= first_newline {
                     break
                 }
-                delimiter_positions.push(pos);
-                delimiter_offsets &= delimiter_offsets - 1;
-            }
-            let mut last_delimiter_offset: usize = 0;
-            for i in delimiter_positions {
-                let diff = i - last_delimiter_offset;
-                self.field_buffer.append(&chunk[last_delimiter_offset..i], diff);
+                let diff = pos - last_delimiter_offset;
+                self.field_buffer.append(&chunk[last_delimiter_offset..pos], diff);
                 new_tokens.push(self.field_buffer.to_escaped_string().expect("Invalid UTF-8 sequence"));
-                last_delimiter_offset = i+1;
+                last_delimiter_offset = pos+1;
                 self.field_buffer.clear();
+                delimiter_offsets &= delimiter_offsets - 1;
             }
             if first_newline != 64 {
                 let diff = first_newline - last_delimiter_offset;
