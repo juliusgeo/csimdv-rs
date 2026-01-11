@@ -134,7 +134,7 @@ impl<T: Read> Parser<T> {
     }
 
     fn chunk_delimiter_offsets(&self, chunk: &[u8; CHUNK_SIZE], valid_bytes: usize) -> (u64, usize, u32) {
-        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_array(*chunk);
+        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
         let delimiter_locations = simd_line.simd_eq(Simd::splat(self.dialect.delimiter as u8));
         let quote_locations = simd_line.simd_eq(Simd::splat(self.dialect.quotechar as u8));
         // xor with current inside quotes state to get correct quote mask
