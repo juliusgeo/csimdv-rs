@@ -15,11 +15,12 @@ extern crate test;
 const CHUNK_SIZE: usize = 64;
 
 const MAX_FIELD_SIZE: usize = 1 << 17;
-
+#[derive(Debug)]
 pub struct Record {
     data: Vec<u8>,
     offsets: Vec<(usize, usize)>,
     num_fields: usize,
+    current_field: usize,
 }
 
 impl Record {
@@ -28,6 +29,7 @@ impl Record {
             data: Vec::<u8>::new(),
             offsets: Vec::<(usize, usize)>::new(),
             num_fields: 0,
+            current_field: 0,
         }
     }
 
@@ -35,6 +37,7 @@ impl Record {
         self.data.clear();
         self.offsets.clear();
         self.num_fields = 0;
+        self.current_field = 0;
     }
 
     pub fn append_field(&mut self, field: &[u8]) {
@@ -45,40 +48,44 @@ impl Record {
         self.num_fields += 1;
     }
 
-    pub fn to_vec(&self) -> Vec<String> {
-        let mut result = Vec::<String>::new();
-        for (start, end) in &self.offsets {
-            match std::str::from_utf8(&self.data[*start..*end]) {
-                Ok(v) => result.push(v.to_string()),
-                Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-            }
-        }
-        return result;
-    }
-
     pub fn len(&self) -> usize {
         return self.num_fields;
     }
 }
 
 impl Index<usize> for Record {
-    type Output = [u8];
+    type Output = str;
     fn index(&self, index: usize) -> &Self::Output {
         let (start, end) = self.offsets[index];
-        return &self.data[start..end];
+        return str::from_utf8(&self.data[start..end]).unwrap();
     }
 }
 
+impl PartialEq<Vec<&str>> for Record {
+    fn eq(&self, other: &Vec<&str>) -> bool {
+        if self.len() != other.len() {
+            return false
+        }
+        for i in 0..self.len() {
+            if &self[i] != other[i] {
+                return false
+            }
+        }
+        return true
+    }
+
+}
+
 impl<'lend> Lending<'lend> for Record {
-    type Lend = &'lend [u8];
+    type Lend = &'lend str;
 }
 impl Lender for Record {
-    fn next(&mut self) -> Option<&'_ [u8]> {
+    fn next(&mut self) -> Option<&'_ str> {
         if self.offsets.len() == 0 {
             return None
         }
         let (start, end) = self.offsets.remove(0);
-        Some(&self.data[start..end])
+        Some(str::from_utf8(&self.data[start..end]).unwrap())
     }
 }
 
