@@ -4,15 +4,84 @@
 mod tests;
 mod macros;
 
+use lender::*;
 use std::cmp::{min};
 use std::io::{BufRead, BufReader, Read};
 use std::simd::Simd;
 use std::simd::cmp::SimdPartialEq;
+use std::ops::{Index};
 extern crate test;
 
 const CHUNK_SIZE: usize = 64;
 
 const MAX_FIELD_SIZE: usize = 1 << 17;
+
+pub struct Record {
+    data: Vec<u8>,
+    offsets: Vec<(usize, usize)>,
+    num_fields: usize,
+}
+
+impl Record {
+    pub fn new() -> Self {
+        return Record {
+            data: Vec::<u8>::new(),
+            offsets: Vec::<(usize, usize)>::new(),
+            num_fields: 0,
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.offsets.clear();
+        self.num_fields = 0;
+    }
+
+    pub fn append_field(&mut self, field: &[u8]) {
+        let start = self.data.len();
+        self.data.extend_from_slice(field);
+        let end = self.data.len();
+        self.offsets.push((start, end));
+        self.num_fields += 1;
+    }
+
+    pub fn to_vec(&self) -> Vec<String> {
+        let mut result = Vec::<String>::new();
+        for (start, end) in &self.offsets {
+            match std::str::from_utf8(&self.data[*start..*end]) {
+                Ok(v) => result.push(v.to_string()),
+                Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+            }
+        }
+        return result;
+    }
+
+    pub fn len(&self) -> usize {
+        return self.num_fields;
+    }
+}
+
+impl Index<usize> for Record {
+    type Output = [u8];
+    fn index(&self, index: usize) -> &Self::Output {
+        let (start, end) = self.offsets[index];
+        return &self.data[start..end];
+    }
+}
+
+impl<'lend> Lending<'lend> for Record {
+    type Lend = &'lend [u8];
+}
+impl Lender for Record {
+    fn next(&mut self) -> Option<&'_ [u8]> {
+        if self.offsets.len() == 0 {
+            return None
+        }
+        let (start, end) = self.offsets.remove(0);
+        Some(&self.data[start..end])
+    }
+}
+
 
 #[derive(Clone, Copy)]
 pub struct Dialect {
@@ -81,6 +150,10 @@ impl FieldBuffer {
         }
         return self.to_string()
     }
+
+    pub fn to_slice(&self) -> &[u8] {
+        return &self.buf[self.start_offset..self.end_offset];
+    }
 }
 
 
@@ -141,8 +214,8 @@ impl<T: Read> Parser<T> {
     }
 
 
-    fn process_buffer_chunks(&mut self) -> Vec<String> {
-        let mut new_tokens = Vec::<String>::new();
+    fn process_buffer_chunks(&mut self, record: &mut Record) -> bool {
+        record.clear();
         let mut chunk = [0u8; CHUNK_SIZE];
         self.field_buffer.clear();
         loop {
@@ -173,7 +246,7 @@ impl<T: Read> Parser<T> {
                 }
                 let diff = pos - last_delimiter_offset;
                 self.field_buffer.append(&chunk[last_delimiter_offset..pos], diff);
-                new_tokens.push(self.field_buffer.to_escaped_string().expect("Invalid UTF-8 sequence"));
+                record.append_field(self.field_buffer.to_slice());
                 last_delimiter_offset = pos+1;
                 self.field_buffer.clear();
                 delimiter_offsets &= delimiter_offsets - 1;
@@ -181,29 +254,18 @@ impl<T: Read> Parser<T> {
             if first_newline != 64 {
                 let diff = first_newline - last_delimiter_offset;
                 self.field_buffer.append(&chunk[last_delimiter_offset..first_newline], diff);
-                new_tokens.push(self.field_buffer.to_escaped_string().expect("Invalid UTF-8 sequence"));
+                record.append_field(self.field_buffer.to_slice());
                 self.bufreader.consume(min(n, first_newline+1));
-                return new_tokens;
+                return true;
             }
             let diff = n - last_delimiter_offset;
             self.field_buffer.append(&chunk[last_delimiter_offset..n], diff);
             self.bufreader.consume(n);
         }
-        return new_tokens
+        return false
     }
-    pub fn read_line(&mut self) -> Vec<String> {
-        return self.process_buffer_chunks()
-    }
-}
-
-impl<T: Read> Iterator for Parser<T> {
-    type Item = Vec<String>;
-    fn next(&mut self) -> Option<Self::Item> {
-        let record = self.read_line();
-        if record.len() == 0 {
-            return None;
-        }
-        return Some(record);
+    pub fn read_line(&mut self, record: &mut Record) -> bool {
+        return self.process_buffer_chunks(record);
     }
 }
 

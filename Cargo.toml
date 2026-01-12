@@ -9,3 +9,4 @@ rustflags = ["-C", "target-feature=+aes"]
 
 [dependencies]
 simd-csv = "0.10.3"
+lender = "0.4.0"
