@@ -16,66 +16,28 @@ extern crate test;
 const CHUNK_SIZE: usize = 64;
 
 const MAX_FIELD_SIZE: usize = 1 << 17;
-pub struct Record {
-    data: Vec<u8>,
-    offsets: Vec<(usize, usize)>,
-    num_fields: usize,
+pub struct Record<'a> {
+    data: &'a [u8],
+    offsets: &'a [(usize, usize)],
     current_field: usize,
-    in_field: bool,
 }
 
-impl Record {
+impl<'a> Record<'a> {
     pub fn new() -> Self {
         return Record {
-            data: Vec::<u8>::new(),
-            offsets: Vec::<(usize, usize)>::new(),
-            num_fields: 0,
+            data: &[],
+            offsets: &[],
             current_field: 0,
-            in_field: false,
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.data.clear();
-        self.offsets.clear();
-        self.num_fields = 0;
-        self.current_field = 0;
-        self.in_field = false
-    }
-
-    pub fn append_field(&mut self, field: &[u8]) {
-        let mut start = self.data.len();
-        if self.in_field {
-            let (start_offset, _) = self.offsets.remove(self.offsets.len()-1);
-            start = start_offset;
-            self.in_field = false;
-        }
-        self.data.extend_from_slice(field);
-        let mut end = self.data.len();
-        self.offsets.push((start, end));
-        self.num_fields += 1;
-    }
-
-    pub fn append_field_chunk(&mut self, field_chunk: &[u8]) {
-        let mut start = self.data.len();
-        self.data.extend_from_slice(field_chunk);
-        let end = self.data.len();
-        if !self.in_field {
-            self.in_field = true;
-            self.offsets.push((start, end));
-        } else {
-            let (start, _) = self.offsets.remove(self.offsets.len()-1);
-            self.offsets.push((start, end) );
         }
     }
 
     pub fn len(&self) -> usize {
-        return self.num_fields;
+        return self.offsets.len();
     }
 }
-impl fmt::Debug for Record {
+impl<'a> fmt::Debug for Record<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for i in 0..self.num_fields {
+        for i in 0..self.offsets.len() {
             if i != 0 {
                 write!(f, ", ")?;
             }
@@ -84,7 +46,7 @@ impl fmt::Debug for Record {
         Ok(())
     }
 }
-impl Index<usize> for Record {
+impl<'a> Index<usize> for Record<'a> {
     type Output = str;
     fn index(&self, index: usize) -> &Self::Output {
         let (start, end) = self.offsets[index];
@@ -92,7 +54,7 @@ impl Index<usize> for Record {
     }
 }
 
-impl PartialEq<Vec<&str>> for Record {
+impl<'a> PartialEq<Vec<&str>> for Record<'a> {
     fn eq(&self, other: &Vec<&str>) -> bool {
         if self.len() != other.len() {
             return false
@@ -107,15 +69,16 @@ impl PartialEq<Vec<&str>> for Record {
 
 }
 
-impl<'lend> Lending<'lend> for Record {
+impl<'lend, 'a> Lending<'lend> for Record<'a> {
     type Lend = &'lend str;
 }
-impl Lender for Record {
+impl<'a> Lender for Record<'a> {
     fn next(&mut self) -> Option<&'_ str> {
-        if self.offsets.len() == 0 {
+        if self.offsets.len() == 0 || self.current_field > self.offsets.len() -1{
             return None
         }
-        let (start, end) = self.offsets.remove(0);
+        let (start, end) = (self.offsets[self.current_field]);
+        self.current_field += 1;
         Some(str::from_utf8(&self.data[start..end]).unwrap())
     }
 }
@@ -145,6 +108,8 @@ pub struct Parser<T: Read> {
     pub dialect: Dialect,
     pub inside_quotes: bool,
     pub bufreader: BufReader<T>,
+    data: Vec<u8>,
+    delimiters: Vec<(usize, usize)>,
 }
 impl<T: Read> Parser<T> {
     pub fn new(dialect: Dialect, bufreader: BufReader<T>) -> Self {
@@ -152,6 +117,8 @@ impl<T: Read> Parser<T> {
             dialect: dialect,
             inside_quotes: false,
             bufreader: bufreader,
+            data: Vec::<u8>::new(),
+            delimiters: Vec::<(usize, usize)>::new(),
         }
     }
 
@@ -196,8 +163,10 @@ impl<T: Read> Parser<T> {
     }
 
 
-    fn process_buffer_chunks(&mut self, record: &mut Record) -> bool {
-        record.clear();
+    fn process_buffer_chunks(&mut self) -> Option<Record> {
+        self.data.clear();
+        self.delimiters.clear();
+        let mut last_offset = 0;
         let mut chunk = [0u8; CHUNK_SIZE];
         loop {
             // fill up the buffer and copy to chunk
@@ -225,22 +194,30 @@ impl<T: Read> Parser<T> {
                 if pos >= first_newline {
                     break
                 }
-                record.append_field(&chunk[last_delimiter_offset..pos]);
+                self.data.extend_from_slice(&chunk[last_delimiter_offset..pos]);
+                self.delimiters.push((last_offset, self.data.len()));
+                last_offset = self.data.len();
                 last_delimiter_offset = pos+1;
                 delimiter_offsets &= delimiter_offsets - 1;
             }
             if first_newline != 64 {
-                record.append_field(&chunk[last_delimiter_offset..first_newline]);
+                self.data.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
+                self.delimiters.push((last_offset, self.data.len()));
+                last_offset = self.data.len();
                 self.bufreader.consume(min(n, first_newline+1));
-                return true;
+                return Some(Record {
+                    data: self.data.as_slice(),
+                    offsets: self.delimiters.as_slice(),
+                    current_field: 0,
+                });
             }
-            record.append_field_chunk(&chunk[last_delimiter_offset..n]);
+            self.data.extend_from_slice(&chunk[last_delimiter_offset..n]);
             self.bufreader.consume(n);
         }
-        return false
+        return None
     }
-    pub fn read_line(&mut self, record: &mut Record) -> bool {
-        return self.process_buffer_chunks(record);
+    pub fn read_line(&mut self) -> Option<Record> {
+        return self.process_buffer_chunks();
     }
 }
 
