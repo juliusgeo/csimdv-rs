@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{FieldBuffer, Record};
+    use crate::{Record};
     use crate::default_dialect;
     use crate::Parser;
     use std::fs::File;
@@ -29,7 +29,6 @@ Cursor::new(s.as_bytes()))
             dialect: default_dialect(),
             inside_quotes: true,
             bufreader: reader_from_str(line),
-            field_buffer: FieldBuffer::new(default_dialect()),
         };
         let mut record = Record::new();
         p.read_line(&mut record);
@@ -43,7 +42,6 @@ Cursor::new(s.as_bytes()))
             dialect: default_dialect(),
             inside_quotes: true,
             bufreader: reader_from_str(line),
-            field_buffer: FieldBuffer::new(default_dialect()),
         };
         let mut record = Record::new();
         p.read_line(&mut record);

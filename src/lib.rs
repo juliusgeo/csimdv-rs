@@ -139,72 +139,12 @@ pub fn default_dialect() -> Dialect {
 }
 
 
-pub struct FieldBuffer {
-    buf: [u8; MAX_FIELD_SIZE],
-    end_offset: usize,
-    start_offset: usize,
-    dialect: Dialect
-}
-
-// struct to hold the contents of an individual field--with a buffer backing that is not reallocated on every line read
-impl FieldBuffer {
-    pub fn new(dialect: Dialect) -> Self {
-        return FieldBuffer {
-            buf: [0u8; MAX_FIELD_SIZE],
-            end_offset: 0,
-            start_offset: 0,
-            dialect: dialect,
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.end_offset = 0;
-        self.start_offset = 0;
-    }
-
-    pub fn append(&mut self, data: &[u8], n_bytes: usize) {
-        if self.end_offset + n_bytes >= MAX_FIELD_SIZE {
-            panic!("Field size exceeds maximum allowed size");
-        }
-        self.buf[self.end_offset..self.end_offset +n_bytes].copy_from_slice(data);
-        self.end_offset += n_bytes;
-    }
-    fn escape_quotes(&self, s: String) -> String {
-        return s.replace(&format!("{}{}", self.dialect.quotechar, self.dialect.quotechar), &self.dialect.quotechar.to_string());
-    }
-    pub fn to_string(&self) -> Option<String> {
-        match str::from_utf8(&self.buf[self.start_offset..self.end_offset]) {
-            Ok(v) => Some(v.to_string()),
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        }
-    }
-
-    pub fn to_escaped_string(&mut self) -> Option<String> {
-        if self.end_offset > 1 && self.buf[self.start_offset] == self.dialect.quotechar as u8 && self.buf[self.end_offset -1] == self.dialect.quotechar as u8 {
-            self.start_offset += 1;
-            self.end_offset -= 1;
-            let unescaped = self.escape_quotes(self.to_string().unwrap());
-            return Some(unescaped);
-        }
-        return self.to_string()
-    }
-
-    pub fn to_slice(&self) -> &[u8] {
-        let (mut start, mut end) = (self.start_offset, self.end_offset);
-        if self.buf[start] == self.dialect.quotechar as u8 {
-            start += 1;
-            end -= 1;
-        }
-        return &self.buf[start..end];
-    }
-}
 
 
 pub struct Parser<T: Read> {
     pub dialect: Dialect,
     pub inside_quotes: bool,
     pub bufreader: BufReader<T>,
-    field_buffer: FieldBuffer,
 }
 impl<T: Read> Parser<T> {
     pub fn new(dialect: Dialect, bufreader: BufReader<T>) -> Self {
@@ -212,7 +152,6 @@ impl<T: Read> Parser<T> {
             dialect: dialect,
             inside_quotes: false,
             bufreader: bufreader,
-            field_buffer: FieldBuffer::new(dialect),
         }
     }
 
