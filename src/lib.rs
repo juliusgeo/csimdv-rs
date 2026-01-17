@@ -6,6 +6,7 @@ mod macros;
 
 use lender::*;
 use std::cmp::{min};
+use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::simd::Simd;
 use std::simd::cmp::SimdPartialEq;
@@ -15,12 +16,12 @@ extern crate test;
 const CHUNK_SIZE: usize = 64;
 
 const MAX_FIELD_SIZE: usize = 1 << 17;
-#[derive(Debug)]
 pub struct Record {
     data: Vec<u8>,
     offsets: Vec<(usize, usize)>,
     num_fields: usize,
     current_field: usize,
+    in_field: bool,
 }
 
 impl Record {
@@ -30,6 +31,7 @@ impl Record {
             offsets: Vec::<(usize, usize)>::new(),
             num_fields: 0,
             current_field: 0,
+            in_field: false,
         }
     }
 
@@ -38,21 +40,50 @@ impl Record {
         self.offsets.clear();
         self.num_fields = 0;
         self.current_field = 0;
+        self.in_field = false
     }
 
     pub fn append_field(&mut self, field: &[u8]) {
-        let start = self.data.len();
+        let mut start = self.data.len();
+        if self.in_field {
+            let (start_offset, _) = self.offsets.remove(self.offsets.len()-1);
+            start = start_offset;
+            self.in_field = false;
+        }
         self.data.extend_from_slice(field);
-        let end = self.data.len();
+        let mut end = self.data.len();
         self.offsets.push((start, end));
         self.num_fields += 1;
+    }
+
+    pub fn append_field_chunk(&mut self, field_chunk: &[u8]) {
+        let mut start = self.data.len();
+        self.data.extend_from_slice(field_chunk);
+        let end = self.data.len();
+        if !self.in_field {
+            self.in_field = true;
+            self.offsets.push((start, end));
+        } else {
+            let (start, _) = self.offsets.remove(self.offsets.len()-1);
+            self.offsets.push((start, end) );
+        }
     }
 
     pub fn len(&self) -> usize {
         return self.num_fields;
     }
 }
-
+impl fmt::Debug for Record {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for i in 0..self.num_fields {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "\"{}\"", &self[i])?;
+        }
+        Ok(())
+    }
+}
 impl Index<usize> for Record {
     type Output = str;
     fn index(&self, index: usize) -> &Self::Output {
@@ -159,7 +190,12 @@ impl FieldBuffer {
     }
 
     pub fn to_slice(&self) -> &[u8] {
-        return &self.buf[self.start_offset..self.end_offset];
+        let (mut start, mut end) = (self.start_offset, self.end_offset);
+        if self.buf[start] == self.dialect.quotechar as u8 {
+            start += 1;
+            end -= 1;
+        }
+        return &self.buf[start..end];
     }
 }
 
@@ -224,7 +260,6 @@ impl<T: Read> Parser<T> {
     fn process_buffer_chunks(&mut self, record: &mut Record) -> bool {
         record.clear();
         let mut chunk = [0u8; CHUNK_SIZE];
-        self.field_buffer.clear();
         loop {
             // fill up the buffer and copy to chunk
             let b = self.bufreader.fill_buf();
@@ -240,7 +275,7 @@ impl<T: Read> Parser<T> {
             let n = min(buffer.len(), CHUNK_SIZE);
             chunk[0..n].copy_from_slice(&buffer[0..n]);
 
-            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(&chunk, n, self.dialect, self.inside_quotes);
+            let (mut delimiter_offsets, mut first_newline, quote_count) = Self::chunk_delimiter_offsets(&chunk, n, self.dialect, self.inside_quotes);
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;
             }
@@ -251,22 +286,16 @@ impl<T: Read> Parser<T> {
                 if pos >= first_newline {
                     break
                 }
-                let diff = pos - last_delimiter_offset;
-                self.field_buffer.append(&chunk[last_delimiter_offset..pos], diff);
-                record.append_field(self.field_buffer.to_slice());
+                record.append_field(&chunk[last_delimiter_offset..pos]);
                 last_delimiter_offset = pos+1;
-                self.field_buffer.clear();
                 delimiter_offsets &= delimiter_offsets - 1;
             }
             if first_newline != 64 {
-                let diff = first_newline - last_delimiter_offset;
-                self.field_buffer.append(&chunk[last_delimiter_offset..first_newline], diff);
-                record.append_field(self.field_buffer.to_slice());
+                record.append_field(&chunk[last_delimiter_offset..first_newline]);
                 self.bufreader.consume(min(n, first_newline+1));
                 return true;
             }
-            let diff = n - last_delimiter_offset;
-            self.field_buffer.append(&chunk[last_delimiter_offset..n], diff);
+            record.append_field_chunk(&chunk[last_delimiter_offset..n]);
             self.bufreader.consume(n);
         }
         return false

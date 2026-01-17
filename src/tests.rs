@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::{FieldBuffer, Record};
-use crate::default_dialect;
-use crate::Parser;
-use std::fs::File;
+    use crate::default_dialect;
+    use crate::Parser;
+    use std::fs::File;
     use std::io::{BufReader, Cursor};
     use lender::Lender;
     use super::*;
@@ -19,7 +19,7 @@ Cursor::new(s.as_bytes()))
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let mut record = Record::new();
         p.read_line(&mut record);
-        assert_eq!(record, vec!["1", "2", "30", "300, 400",  "4"])
+        assert_eq!(record, vec!["1", "2", "30", "\"300, 400\"",  "4"])
     }
 
     #[test]
@@ -33,7 +33,7 @@ Cursor::new(s.as_bytes()))
         };
         let mut record = Record::new();
         p.read_line(&mut record);
-        assert_eq!(record, vec![", \"", "1", "2", "300, 400",  "4"])
+        assert_eq!(record, vec![", \"", "1", "2", "\"300, 400\"",  "4"])
     }
 
     #[test]
@@ -47,7 +47,7 @@ Cursor::new(s.as_bytes()))
         };
         let mut record = Record::new();
         p.read_line(&mut record);
-        assert_eq!(record, vec![", \"", "1", "2", "300,\r\n 400",  "4"])
+        assert_eq!(record, vec![", \"", "1", "2", "\"300,\r\n 400\"",  "4"])
     }
 
     #[test]
@@ -56,6 +56,7 @@ Cursor::new(s.as_bytes()))
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let mut record = Record::new();
         p.read_line(&mut record);
+        dbg!(&record);
         assert_eq!(&record[record.len() -2], "offscore blah blah")
     }
 
@@ -104,7 +105,7 @@ Cursor::new(s.as_bytes()))
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let mut record = Record::new();
         p.read_line(&mut record);
-        assert_eq!(&record[record.len()-4], "(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"seam\" route; Carter closest defender.".to_string());
+        assert_eq!(&record[record.len()-4], "\"(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"\"seam\"\" route; Carter closest defender.\"".to_string());
         assert_eq!(&record[record.len()-1], "2012");
     }
 
@@ -130,7 +131,7 @@ Cursor::new(s.as_bytes()))
     #[bench]
     fn bench_parse_file(b: &mut Bencher) {
         fn parse_file(){
-            let file = File::open("examples/nfl.csv").unwrap();
+            let file = File::open("examples/customers-2000000.csv").unwrap();
             let mut p = Parser::new(default_dialect(), BufReader::new(file));
             let mut record = Record::new();
             while p.read_line(&mut record) {
@@ -155,7 +156,7 @@ Cursor::new(s.as_bytes()))
     fn bench_parse_file_simd_csv(b: &mut Bencher) {
         use simd_csv::{Reader, ByteRecord};
         fn parse_file(){
-            let file = File::open("examples/nfl.csv").unwrap();
+            let file = File::open("examples/customers-2000000.csv").unwrap();
 
             let mut reader = Reader::from_reader(file);
             let mut record = ByteRecord::new();
@@ -164,6 +165,21 @@ Cursor::new(s.as_bytes()))
                 for cell in record.iter() {
                     let _ = String::from_utf8(cell.to_vec()).unwrap();
                 }
+            }
+        }
+        b.iter(|| parse_file());
+    }
+
+    #[bench]
+    fn bench_parse_file_simd_csv_zerocopy(b: &mut Bencher) {
+        use simd_csv::{ByteRecord, ZeroCopyReader, ZeroCopyByteRecord};
+        fn parse_file(){
+            let file = File::open("examples/customers-2000000.csv").unwrap();
+
+            let mut reader = ZeroCopyReader::from_reader(file);
+            while let Some(record) = reader.read_byte_record().unwrap() {
+                // Only unescaping third column:
+                let _ = record;
             }
         }
         b.iter(|| parse_file());
