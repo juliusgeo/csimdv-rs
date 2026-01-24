@@ -8,7 +8,7 @@ mod tests {
     use test::Bencher;
     fn reader_from_str(s: &str) -> BufReader<Cursor<&[u8]>> {
         BufReader::new(
-Cursor::new(s.as_bytes()))
+        Cursor::new(s.as_bytes()))
     }
 
     #[test]
@@ -123,46 +123,28 @@ Cursor::new(s.as_bytes()))
     #[bench]
     fn bench_parse_file(b: &mut Bencher) {
         fn parse_file(){
-            let file = File::open("examples/nfl.csv").unwrap();
+            let file = File::open("examples/customers-2000000.csv").unwrap();
             let mut p = Parser::new(default_dialect(), BufReader::new(file));
             while let Some(mut record) = p.read_line() {
                 while let Some(field) = record.next() {
-                    let _ = field;
+                    let _ = field.len();
                 }
             }
         }
         b.iter(|| parse_file());
     }
 
-
-    // #[bench]
-    // fn bench_parse_file_simd_csv(b: &mut Bencher) {
-    //     use simd_csv::{Reader, ByteRecord};
-    //     fn parse_file(){
-    //         let file = File::open("examples/customers-2000000.csv").unwrap();
-    //
-    //         let mut reader = Reader::from_reader(file);
-    //         let mut record = ByteRecord::new();
-    //
-    //         while reader.read_byte_record(&mut record).unwrap() {
-    //             for cell in record.iter() {
-    //                 let _ = String::from_utf8(cell.to_vec()).unwrap();
-    //             }
-    //         }
-    //     }
-    //     b.iter(|| parse_file());
-    // }
-
     #[bench]
     fn bench_parse_file_simd_csv_zerocopy(b: &mut Bencher) {
-        use simd_csv::{ByteRecord, ZeroCopyReader, ZeroCopyByteRecord};
+        use simd_csv::{ZeroCopyReader};
         fn parse_file(){
             let file = File::open("examples/nfl.csv").unwrap();
 
             let mut reader = ZeroCopyReader::from_reader(file);
             while let Some(record) = reader.read_byte_record().unwrap() {
-                // Only unescaping third column:
-                let _ = record;
+                for field in record.iter() {
+                    let _ = field.len();
+                }
             }
         }
         b.iter(|| parse_file());
