@@ -78,7 +78,7 @@ impl<'a> Lender for Record<'a> {
         if self.offsets.len() == 0 || self.current_field > self.offsets.len() -1{
             return None
         }
-        let (start, end) = (self.offsets[self.current_field]);
+        let (start, end) = self.offsets[self.current_field];
         self.current_field += 1;
         Some(str::from_utf8(&self.data[start..end]).unwrap())
     }
@@ -164,7 +164,7 @@ impl<T: Read> Parser<T> {
     }
 
 
-    fn process_buffer_chunks(&mut self) -> Option<Record> {
+    fn process_buffer_chunks(&mut self) -> Option<Record<'_>> {
         self.data.clear();
         self.delimiters.clear();
         let mut last_offset = 0;
@@ -194,7 +194,6 @@ impl<T: Read> Parser<T> {
             if first_newline != CHUNK_SIZE {
                 self.data.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
                 self.delimiters.push((last_offset, self.data.len()));
-                last_offset = self.data.len();
                 self.bufreader.consume(min(n, first_newline+1));
                 return Some(Record {
                     data: self.data.as_slice(),
@@ -207,7 +206,7 @@ impl<T: Read> Parser<T> {
         }
         return None
     }
-    pub fn read_line(&mut self) -> Option<Record> {
+    pub fn read_line(&mut self) -> Option<Record<'_>> {
         return self.process_buffer_chunks();
     }
 }

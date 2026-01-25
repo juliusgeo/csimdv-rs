@@ -3,9 +3,8 @@ mod tests {
     use crate::default_dialect;
     use crate::Parser;
     use std::fs::File;
-    use std::io::{BufReader, Cursor};
+    use std::io::Cursor;
     use lender::Lender;
-    use test::Bencher;
     use crate::aligned_buffer::AlignedBuffer;
 
     fn reader_from_str(s: &str) -> AlignedBuffer<Cursor<&[u8]>> {
@@ -105,7 +104,6 @@ mod tests {
 
     #[test]
     fn test_delimiter_masking() {
-        let line = "";
         let mask = Parser::<File>::mask_invalid_bytes(16);
         assert_eq!(mask & 1 << 17 , 0);
     }
