@@ -131,33 +131,4 @@ mod tests {
             }
         }
     }
-    #[bench]
-    fn bench_parse_file(b: &mut Bencher) {
-        fn parse_file(){
-            let file = File::open("examples/customers-2000000.csv").unwrap();
-            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
-            while let Some(mut record) = p.read_line() {
-                while let Some(field) = record.next() {
-                    let _ = field.len();
-                }
-            }
-        }
-        b.iter(|| parse_file());
-    }
-
-    #[bench]
-    fn bench_parse_file_simd_csv_zerocopy(b: &mut Bencher) {
-        use simd_csv::{ZeroCopyReader};
-        fn parse_file(){
-            let file = File::open("examples/customers-2000000.csv").unwrap();
-
-            let mut reader = ZeroCopyReader::from_reader(file);
-            while let Some(record) = reader.read_byte_record().unwrap() {
-                for field in record.iter() {
-                    let _ = field.len();
-                }
-            }
-        }
-        b.iter(|| parse_file());
-    }
 }

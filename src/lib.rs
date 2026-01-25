@@ -3,9 +3,8 @@
 
 mod tests;
 mod macros;
-mod aligned_buffer;
+pub mod aligned_buffer;
 mod constants;
-
 use lender::*;
 use std::cmp::min;
 use std::fmt;

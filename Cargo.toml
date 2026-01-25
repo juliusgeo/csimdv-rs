@@ -8,5 +8,13 @@ edition = "2024"
 rustflags = ["-C", "target-feature=+aes"]
 
 [dependencies]
-simd-csv = "0.10.3"
 lender = "0.4.0"
+
+[[bench]]
+path = "benches/benchmarks.rs"
+name = "benchmarks"
+harness = false
+
+[dev-dependencies]
+criterion = "0.7.0"
+simd-csv = "0.10.3"
