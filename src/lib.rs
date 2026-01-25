@@ -3,19 +3,21 @@
 
 mod tests;
 mod macros;
+mod aligned_buffer;
+mod constants;
 
 use lender::*;
-use std::cmp::{min};
+use std::cmp::min;
 use std::fmt;
-use std::io::{BufRead, BufReader, Read};
+use std::io::Read;
 use std::simd::Simd;
 use std::simd::cmp::SimdPartialEq;
-use std::ops::{Index};
+use std::ops::Index;
+use crate::aligned_buffer::AlignedBuffer;
+use crate::constants::{CHUNK_SIZE};
 extern crate test;
 
-const CHUNK_SIZE: usize = 64;
 
-const MAX_FIELD_SIZE: usize = 1 << 17;
 pub struct Record<'a> {
     data: &'a [u8],
     offsets: &'a [(usize, usize)],
@@ -107,12 +109,12 @@ pub fn default_dialect() -> Dialect {
 pub struct Parser<T: Read> {
     pub dialect: Dialect,
     pub inside_quotes: bool,
-    pub bufreader: BufReader<T>,
+    pub bufreader: AlignedBuffer<T>,
     data: Vec<u8>,
     delimiters: Vec<(usize, usize)>,
 }
 impl<T: Read> Parser<T> {
-    pub fn new(dialect: Dialect, bufreader: BufReader<T>) -> Self {
+    pub fn new(dialect: Dialect, bufreader: AlignedBuffer<T>) -> Self {
         return Parser {
             dialect: dialect,
             inside_quotes: false,
@@ -131,7 +133,7 @@ impl<T: Read> Parser<T> {
         return mask | (mask - 1);
     }
 
-    fn chunk_delimiter_offsets(chunk: &[u8; CHUNK_SIZE], valid_bytes: usize, dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
+    fn chunk_delimiter_offsets(chunk: &[u8], valid_bytes: usize, dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
         let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
         let delimiter_locations = simd_line.simd_eq(Simd::splat(dialect.delimiter as u8));
         let quote_locations = simd_line.simd_eq(Simd::splat(dialect.quotechar as u8));
@@ -167,23 +169,13 @@ impl<T: Read> Parser<T> {
         self.data.clear();
         self.delimiters.clear();
         let mut last_offset = 0;
-        let mut chunk = [0u8; CHUNK_SIZE];
         loop {
             // fill up the buffer and copy to chunk
-            let b = self.bufreader.fill_buf();
-            if b.is_ok() == false {
-                break;
+            let (chunk, n) = self.bufreader.get_chunk();
+            if n == 0 {
+                break
             }
-            let buffer = b.unwrap();
-
-            if buffer.len() == 0 {
-                break;
-            }
-            // only copy at max CHUNK_SIZE bytes
-            let n = min(buffer.len(), CHUNK_SIZE);
-            chunk[0..n].copy_from_slice(&buffer[0..n]);
-
-            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(&chunk, n, self.dialect, self.inside_quotes);
+            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(chunk, n, self.dialect, self.inside_quotes);
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;
             }
@@ -200,7 +192,7 @@ impl<T: Read> Parser<T> {
                 last_delimiter_offset = pos+1;
                 delimiter_offsets &= delimiter_offsets - 1;
             }
-            if first_newline != 64 {
+            if first_newline != CHUNK_SIZE {
                 self.data.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
                 self.delimiters.push((last_offset, self.data.len()));
                 last_offset = self.data.len();

@@ -6,9 +6,12 @@ mod tests {
     use std::io::{BufReader, Cursor};
     use lender::Lender;
     use test::Bencher;
-    fn reader_from_str(s: &str) -> BufReader<Cursor<&[u8]>> {
-        BufReader::new(
-        Cursor::new(s.as_bytes()))
+    use crate::aligned_buffer::AlignedBuffer;
+
+    fn reader_from_str(s: &str) -> AlignedBuffer<Cursor<&[u8]>> {
+        AlignedBuffer::new(
+        Cursor::new(s.as_bytes())
+        )
     }
 
     #[test]
@@ -110,21 +113,29 @@ mod tests {
     #[test]
     fn test_parse_file() {
         let file = File::open("examples/nfl.csv").unwrap();
-        let mut p = Parser::new(default_dialect(), BufReader::new(file));
+        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
         while let Some(mut record) = p.read_line() {
-            dbg!(record.len());
             while let Some(field) = record.next() {
                 let _ = field;
-                dbg!(field);
             }
         }
     }
 
+    #[test]
+    fn bench_parse_file_profile() {
+        let file = File::open("examples/customers-2000000.csv").unwrap();
+        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+        while let Some(mut record) = p.read_line() {
+            while let Some(field) = record.next() {
+                let _ = field.len();
+            }
+        }
+    }
     #[bench]
     fn bench_parse_file(b: &mut Bencher) {
         fn parse_file(){
             let file = File::open("examples/customers-2000000.csv").unwrap();
-            let mut p = Parser::new(default_dialect(), BufReader::new(file));
+            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
             while let Some(mut record) = p.read_line() {
                 while let Some(field) = record.next() {
                     let _ = field.len();
@@ -138,7 +149,7 @@ mod tests {
     fn bench_parse_file_simd_csv_zerocopy(b: &mut Bencher) {
         use simd_csv::{ZeroCopyReader};
         fn parse_file(){
-            let file = File::open("examples/nfl.csv").unwrap();
+            let file = File::open("examples/customers-2000000.csv").unwrap();
 
             let mut reader = ZeroCopyReader::from_reader(file);
             while let Some(record) = reader.read_byte_record().unwrap() {
@@ -149,6 +160,4 @@ mod tests {
         }
         b.iter(|| parse_file());
     }
-
-
 }
