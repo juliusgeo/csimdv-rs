@@ -34,7 +34,7 @@ impl<T: Read> AlignedBuffer<T> {
     }
 
     pub fn get_chunk(&mut self) -> (&[u8], usize) {
-        let remaining = BUFFER_SIZE - self.start;
+        let remaining = self.valid_bytes - self.start;
         if remaining < CHUNK_SIZE {
             self.buffer.copy_within(self.start..BUFFER_SIZE, 0);
             let res = self.reader.read(&mut self.buffer[remaining..]);
