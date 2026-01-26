@@ -19,7 +19,7 @@ extern crate test;
 
 pub struct Record<'a> {
     data: &'a [u8],
-    offsets: &'a [(usize, usize)],
+    offsets: &'a [usize],
     current_field: usize,
 }
 
@@ -33,12 +33,12 @@ impl<'a> Record<'a> {
     }
 
     pub fn len(&self) -> usize {
-        return self.offsets.len();
+        return self.offsets.len()-1;
     }
 }
 impl<'a> fmt::Debug for Record<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for i in 0..self.offsets.len() {
+        for i in 0..self.len() {
             if i != 0 {
                 write!(f, ", ")?;
             }
@@ -50,7 +50,11 @@ impl<'a> fmt::Debug for Record<'_> {
 impl<'a> Index<usize> for Record<'a> {
     type Output = str;
     fn index(&self, index: usize) -> &Self::Output {
-        let (start, end) = self.offsets[index];
+
+        let (start, mut end) = (self.offsets[index], self.offsets[index+1]);
+        if index < self.len() - 1 {
+            end -= 1;
+        }
         return str::from_utf8(&self.data[start..end]).unwrap();
     }
 }
@@ -75,10 +79,10 @@ impl<'lend, 'a> Lending<'lend> for Record<'a> {
 }
 impl<'a> Lender for Record<'a> {
     fn next(&mut self) -> Option<&'_ str> {
-        if self.offsets.len() == 0 || self.current_field > self.offsets.len() -1{
+        if self.offsets.len() == 0 || !(self.current_field < self.offsets.len() -1){
             return None
         }
-        let (start, end) = self.offsets[self.current_field];
+        let (start, end) = (self.offsets[self.current_field], self.offsets[self.current_field+1]);
         self.current_field += 1;
         Some(str::from_utf8(&self.data[start..end]).unwrap())
     }
@@ -110,7 +114,7 @@ pub struct Parser<T: Read> {
     pub inside_quotes: bool,
     pub bufreader: AlignedBuffer<T>,
     data: Vec<u8>,
-    delimiters: Vec<(usize, usize)>,
+    delimiters: Vec<usize>,
 }
 impl<T: Read> Parser<T> {
     pub fn new(dialect: Dialect, bufreader: AlignedBuffer<T>) -> Self {
@@ -119,7 +123,7 @@ impl<T: Read> Parser<T> {
             inside_quotes: false,
             bufreader: bufreader,
             data: Vec::<u8>::new(),
-            delimiters: Vec::<(usize, usize)>::new(),
+            delimiters: Vec::<usize>::new(),
         }
     }
 
@@ -167,6 +171,9 @@ impl<T: Read> Parser<T> {
     fn process_buffer_chunks(&mut self) -> Option<Record<'_>> {
         self.data.clear();
         self.delimiters.clear();
+        self.delimiters.push(0);
+        // to minimize data copies, we keep track of the current offset for each delimiter.
+        // if the chunk has no newline, we copy over the whole thing. If it has a newline, copy up till the newline.
         let mut last_offset = 0;
         loop {
             // fill up the buffer and copy to chunk
@@ -185,15 +192,16 @@ impl<T: Read> Parser<T> {
                 if pos >= first_newline {
                     break
                 }
-                self.data.extend_from_slice(&chunk[last_delimiter_offset..pos]);
-                self.delimiters.push((last_offset, self.data.len()));
-                last_offset = self.data.len();
-                last_delimiter_offset = pos+1;
                 delimiter_offsets &= delimiter_offsets - 1;
+                // +1 to include the comma, otherwise the offsets become misaligned
+                last_offset += pos - last_delimiter_offset + 1;
+                self.delimiters.push(last_offset);
+                last_delimiter_offset = pos+1;
             }
             if first_newline != CHUNK_SIZE {
-                self.data.extend_from_slice(&chunk[last_delimiter_offset..first_newline]);
-                self.delimiters.push((last_offset, self.data.len()));
+                self.data.extend_from_slice(&chunk[0..first_newline]);
+                last_offset += first_newline - last_delimiter_offset;
+                self.delimiters.push(last_offset);
                 self.bufreader.consume(min(n, first_newline+1));
                 return Some(Record {
                     data: self.data.as_slice(),
@@ -201,7 +209,8 @@ impl<T: Read> Parser<T> {
                     current_field: 0,
                 });
             }
-            self.data.extend_from_slice(&chunk[last_delimiter_offset..n]);
+            self.data.extend_from_slice(&chunk[0..n]);
+            last_offset += n - last_delimiter_offset;
             self.bufreader.consume(n);
         }
         return None

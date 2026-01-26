@@ -29,7 +29,7 @@ mod tests {
             inside_quotes: true,
             bufreader: reader_from_str(line),
             data: Vec::<u8>::new(),
-            delimiters: Vec::<(usize, usize)>::new(),
+            delimiters: Vec::<usize>::new(),
         };
         let record = p.read_line().unwrap();
         assert_eq!(record, vec![", \"", "1", "2", "\"300, 400\"",  "4"])
@@ -43,7 +43,7 @@ mod tests {
             inside_quotes: true,
             bufreader: reader_from_str(line),
             data: Vec::<u8>::new(),
-            delimiters: Vec::<(usize, usize)>::new(),
+            delimiters: Vec::<usize>::new(),
         };
         let record = p.read_line().unwrap();
         assert_eq!(record, vec![", \"", "1", "2", "\"300,\r\n 400\"",  "4"])
@@ -121,12 +121,19 @@ mod tests {
 
     #[test]
     fn bench_parse_file_profile() {
-        let file = File::open("examples/customers-2000000.csv").unwrap();
-        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
-        while let Some(mut record) = p.read_line() {
-            while let Some(field) = record.next() {
-                let _ = field.len();
+        fn parse_file() {
+            let file = File::open("examples/nfl.csv").unwrap();
+            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+            while let Some(mut record) = p.read_line() {
+                while let Some(field) = record.next() {
+                    let _ = field.len();
+                }
             }
         }
+
+        for _ in 0..100 {
+            parse_file();
+        }
+
     }
 }
