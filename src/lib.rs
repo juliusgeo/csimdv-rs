@@ -9,7 +9,7 @@ use lender::*;
 use std::cmp::min;
 use std::fmt;
 use std::io::Read;
-use std::simd::Simd;
+use std::simd::{Mask, Simd};
 use std::simd::cmp::SimdPartialEq;
 use std::ops::Index;
 use crate::aligned_buffer::AlignedBuffer;
@@ -137,34 +137,31 @@ impl<T: Read> Parser<T> {
     }
 
     fn chunk_delimiter_offsets(chunk: &[u8], valid_bytes: usize, dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
+        // create the simd line
         let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
+
+        // find delimiters and quotes
         let delimiter_locations = simd_line.simd_eq(Simd::splat(dialect.delimiter as u8));
         let quote_locations = simd_line.simd_eq(Simd::splat(dialect.quotechar as u8));
+        let mut quote_locations_mask = quote_locations.to_bitmask();
+        let unescaped_quote_count = quote_locations_mask.count_ones();
+
         // xor with current inside quotes state to get correct quote mask
-        let quote_mask = quote_locations.to_bitmask() ^ inside_quotes as u64;
+        let quote_mask = quote_locations_mask ^ inside_quotes as u64;
         let inside_quotes = clmul64!(!0u64, quote_mask) as u64;
-        let mut filtered_delimiter_locations: u64 = delimiter_locations.to_bitmask() & !inside_quotes;
+        let filtered_delimiter_locations: u64 = delimiter_locations.to_bitmask() & !inside_quotes;
 
-        let newline_locations = simd_line.simd_eq(Simd::splat(b'\n')).to_bitmask();
-        let return_locations = simd_line.simd_eq(Simd::splat(b'\r')).to_bitmask();
-        let newline_return_locations = return_locations & newline_locations >> 1;
+        // calculate where newlines are
+        let newline_locations = simd_line.simd_eq(Simd::splat(b'\n'));
+        let return_locations = simd_line.simd_eq(Simd::splat(b'\r'));
+        let newline_return_locations: Mask<i8, 64> = return_locations & newline_locations.shift_elements_right::<1>(true);
+
         let all_newline_locations = newline_locations | newline_return_locations | return_locations;
-        let filtered_newline_locations: u64 = all_newline_locations & !inside_quotes;
-        let mut filtered_quote_locations = quote_locations.to_bitmask();
-        // ignore any delimiter offsets past the newline
-        let mut mask = Self::mask_invalid_bytes(valid_bytes);
-        let first_newline = filtered_newline_locations.trailing_zeros() as usize;
-        // if we have a newline we want to mask out any delimiters/quotes past it
-        if filtered_newline_locations != 0 {
-            if first_newline != 0 {
-                let newline_mask = Self::mask_invalid_bytes(first_newline);
-                mask &= newline_mask;
-            }
-        }
-        filtered_delimiter_locations = filtered_delimiter_locations & mask;
-        filtered_quote_locations = filtered_quote_locations & mask;
+        let filtered_newline_locations: u64 = all_newline_locations.to_bitmask() & !inside_quotes;
 
-        return (filtered_delimiter_locations, first_newline, filtered_quote_locations.count_ones())
+        // ignore any delimiter offsets past the newline
+        let first_newline = filtered_newline_locations.trailing_zeros() as usize;
+        return (filtered_delimiter_locations, first_newline, unescaped_quote_count)
     }
 
 
@@ -198,7 +195,7 @@ impl<T: Read> Parser<T> {
                 self.delimiters.push(last_offset);
                 last_delimiter_offset = pos+1;
             }
-            if first_newline != CHUNK_SIZE {
+            if first_newline != CHUNK_SIZE && first_newline <= n {
                 self.data.extend_from_slice(&chunk[0..first_newline]);
                 last_offset += first_newline - last_delimiter_offset;
                 self.delimiters.push(last_offset);

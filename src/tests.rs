@@ -58,6 +58,15 @@ mod tests {
         assert_eq!(&record[record.len() -2], "offscore blah blah")
     }
 
+    #[test]
+    fn test_line_parsing_boundaries_garbage() {
+        let line = "12345678910,12345678910,12345678910,12345678910,offscore blah blah,season\nblah, \n\"";
+        let mut p = Parser::new(default_dialect(), reader_from_str(line));
+        let record = p.read_line().unwrap();
+        dbg!(&record);
+        assert_eq!(&record[record.len() -2], "offscore blah blah")
+    }
+
 
     #[test]
     fn test_line_parsing_nfl_1() {
@@ -113,6 +122,7 @@ mod tests {
         let file = File::open("examples/nfl.csv").unwrap();
         let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
         while let Some(mut record) = p.read_line() {
+            assert_eq!(record.len(), 13);
             while let Some(field) = record.next() {
                 let _ = field;
             }
