@@ -136,9 +136,9 @@ impl<T: Read> Parser<T> {
         return mask | (mask - 1);
     }
 
-    fn chunk_delimiter_offsets(chunk: &[u8], valid_bytes: usize, dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
+    fn chunk_delimiter_offsets(chunk: [u8; CHUNK_SIZE], dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
         // create the simd line
-        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
+        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_array(chunk);
 
         // find delimiters and quotes
         let delimiter_locations = simd_line.simd_eq(Simd::splat(dialect.delimiter as u8));
@@ -173,12 +173,12 @@ impl<T: Read> Parser<T> {
         // if the chunk has no newline, we copy over the whole thing. If it has a newline, copy up till the newline.
         let mut last_offset = 0;
         loop {
-            // fill up the buffer and copy to chunk
+            // get the next chunk from the buffer, with n<=64 valid bytes
             let (chunk, n) = self.bufreader.get_chunk();
             if n == 0 {
                 break
             }
-            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(chunk, n, self.dialect, self.inside_quotes);
+            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(chunk, self.dialect, self.inside_quotes);
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;
             }

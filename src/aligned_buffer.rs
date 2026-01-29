@@ -33,7 +33,7 @@ impl<T: Read> AlignedBuffer<T> {
         }
     }
 
-    pub fn get_chunk(&mut self) -> (&[u8], usize) {
+    pub fn get_chunk(&mut self) -> ([u8; CHUNK_SIZE], usize) {
         let remaining = self.valid_bytes - self.start;
         if remaining < CHUNK_SIZE {
             self.buffer.copy_within(self.start..BUFFER_SIZE, 0);
@@ -48,7 +48,8 @@ impl<T: Read> AlignedBuffer<T> {
             }
             self.start = 0;
         }
-        return (&self.buffer[self.start..self.start+CHUNK_SIZE], min(self.valid_bytes - self.start, CHUNK_SIZE));
+        let arr: [u8; CHUNK_SIZE] = unsafe { self.buffer[self.start..self.start+CHUNK_SIZE].try_into().unwrap_unchecked() };
+        return (arr, min(self.valid_bytes - self.start, CHUNK_SIZE));
     }
 
     pub fn consume(&mut self, amt: usize) {
