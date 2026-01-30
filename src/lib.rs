@@ -24,10 +24,10 @@ pub struct Record<'a> {
 }
 
 impl<'a> Record<'a> {
-    pub fn new() -> Self {
+    pub fn new(slice: &'a [u8], offsets: &'a [usize]) -> Self {
         return Record {
-            data: &[],
-            offsets: &[],
+            data: slice,
+            offsets: offsets,
             current_field: 0,
         }
     }
@@ -50,7 +50,6 @@ impl<'a> fmt::Debug for Record<'_> {
 impl<'a> Index<usize> for Record<'a> {
     type Output = str;
     fn index(&self, index: usize) -> &Self::Output {
-
         let (start, mut end) = (self.offsets[index], self.offsets[index+1]);
         if index < self.len() - 1 {
             end -= 1;
@@ -75,16 +74,16 @@ impl<'a> PartialEq<Vec<&str>> for Record<'a> {
 }
 
 impl<'lend, 'a> Lending<'lend> for Record<'a> {
-    type Lend = &'lend str;
+    type Lend = &'lend [u8];
 }
 impl<'a> Lender for Record<'a> {
-    fn next(&mut self) -> Option<&'_ str> {
+    fn next(&mut self) -> Option<&'_ [u8]> {
         if self.offsets.len() == 0 || !(self.current_field < self.offsets.len() -1){
             return None
         }
         let (start, end) = (self.offsets[self.current_field], self.offsets[self.current_field+1]);
         self.current_field += 1;
-        Some(str::from_utf8(&self.data[start..end]).unwrap())
+        Some(&self.data[start..end])
     }
 }
 
@@ -200,11 +199,10 @@ impl<T: Read> Parser<T> {
                 last_offset += first_newline - last_delimiter_offset;
                 self.delimiters.push(last_offset);
                 self.bufreader.consume(min(n, first_newline+1));
-                return Some(Record {
-                    data: self.data.as_slice(),
-                    offsets: self.delimiters.as_slice(),
-                    current_field: 0,
-                });
+                return Some(Record::new(
+                    self.data.as_slice(),
+                    self.delimiters.as_slice(),
+                ));
             }
             self.data.extend_from_slice(&chunk[0..n]);
             last_offset += n - last_delimiter_offset;
