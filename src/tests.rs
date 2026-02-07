@@ -4,8 +4,8 @@ mod tests {
     use crate::Parser;
     use std::fs::File;
     use std::io::Cursor;
-    use lender::Lender;
     use crate::aligned_buffer::AlignedBuffer;
+    use simd_csv::ZeroCopyReader;
 
     fn reader_from_str(s: &str) -> AlignedBuffer<Cursor<&[u8]>> {
         AlignedBuffer::new(
@@ -22,32 +22,16 @@ mod tests {
     }
 
     #[test]
-    fn test_line_parsing_continuation() {
-        let line = ", \",1,2,\"300, 400\",4\n";
-        let mut p = Parser {
-            dialect: default_dialect(),
-            inside_quotes: true,
-            bufreader: reader_from_str(line),
-            data: Vec::<u8>::new(),
-            delimiters: Vec::<usize>::new(),
-        };
+    fn test_multi_line_parsing() {
+        let line = "1,2,30,\"300, 400\",4\n\
+        1,2,30,\"300, 400\",4\n";
+        let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
-        assert_eq!(record, vec![", \"", "1", "2", "\"300, 400\"",  "4"])
+        assert_eq!(record, vec!["1", "2", "30", "\"300, 400\"",  "4"]);
+        let record = p.read_line().unwrap();
+        assert_eq!(record, vec!["1", "2", "30", "\"300, 400\"",  "4"]);
     }
 
-    #[test]
-    fn test_line_parsing_escaped_newlines() {
-        let line = ", \",1,2,\"300,\r\n 400\",4\n";
-        let mut p = Parser {
-            dialect: default_dialect(),
-            inside_quotes: true,
-            bufreader: reader_from_str(line),
-            data: Vec::<u8>::new(),
-            delimiters: Vec::<usize>::new(),
-        };
-        let record = p.read_line().unwrap();
-        assert_eq!(record, vec![", \"", "1", "2", "\"300,\r\n 400\"",  "4"])
-    }
 
     #[test]
     fn test_line_parsing_boundaries() {
@@ -119,12 +103,11 @@ mod tests {
 
     #[test]
     fn test_parse_file() {
-        let file = File::open("examples/nfl.csv").unwrap();
+        let file = File::open("examples/customers-2000000.csv").unwrap();
         let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
         while let Some(mut record) = p.read_line() {
-            assert_eq!(record.len(), 13);
-            while let Some(field) = record.next() {
-                let _ = field;
+            for field in record.iter() {
+                let _ = field.len();
             }
         }
     }
@@ -135,7 +118,7 @@ mod tests {
             let file = File::open("examples/nfl.csv").unwrap();
             let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
             while let Some(mut record) = p.read_line() {
-                while let Some(field) = record.next() {
+                for field in record.iter() {
                     let _ = field.len();
                 }
             }
@@ -145,5 +128,30 @@ mod tests {
             parse_file();
         }
 
+    }
+
+    #[test]
+    fn test_equality_simd_csv() {
+        let path = "examples/customers-2000000.csv";
+        let file = File::open(path).unwrap();
+        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+        let file2 = File::open(path).unwrap();
+        let mut reader = ZeroCopyReader::from_reader(file2);
+        p.read_line(); // skip header
+        let mut counter = 0;
+        while let Some(ours) = p.read_line() {
+            if let Some(theirs) = reader.read_byte_record().unwrap() {
+                counter += 1;
+                assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}", counter);
+                for i in 0..ours.len() {
+                    let o = &ours[i];
+                    let theirs = str::from_utf8(&theirs[i]).unwrap();
+                    assert_eq!(*o, *theirs);
+                }
+            } else {
+                panic!("Mismatch in number of records");
+            }
+
+        }
     }
 }

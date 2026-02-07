@@ -22,7 +22,7 @@ fn parse_file_csimdv(path: &str){
     let file = File::open(path).unwrap();
     let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
     while let Some(mut record) = p.read_line() {
-        while let Some(field) = record.next() {
+        for field in record.iter() {
             let _ = field.len();
         }
     }

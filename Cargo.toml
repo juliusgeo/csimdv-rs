@@ -5,7 +5,7 @@ edition = "2024"
 
 
 [build]
-rustflags = ["-C", "target-feature=+aes"]
+rustflags = ["-C", "target-feature=+aes,+neon"]
 
 [dependencies]
 lender = "0.4.0"
@@ -18,3 +18,9 @@ harness = false
 [dev-dependencies]
 criterion = "0.7.0"
 simd-csv = "0.10.3"
+
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

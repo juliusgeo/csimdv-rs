@@ -5,88 +5,25 @@ mod tests;
 mod macros;
 pub mod aligned_buffer;
 mod constants;
-use lender::*;
+mod record;
+
+use crate::record::Record;
 use std::cmp::min;
-use std::fmt;
 use std::io::Read;
-use std::simd::{Mask, Simd};
+use std::simd::{Simd};
 use std::simd::cmp::SimdPartialEq;
 use std::ops::Index;
 use crate::aligned_buffer::AlignedBuffer;
 use crate::constants::{CHUNK_SIZE};
 extern crate test;
 
-
-pub struct Record<'a> {
-    data: &'a [u8],
-    offsets: &'a [usize],
-    current_field: usize,
+#[derive(Clone, Copy)]
+pub struct Splats {
+    pub delimiter: Simd<u8, CHUNK_SIZE>,
+    pub quotechar: Simd<u8, CHUNK_SIZE>,
+    pub newline: Simd<u8, CHUNK_SIZE>,
+    pub returnchar: Simd<u8, CHUNK_SIZE>,
 }
-
-impl<'a> Record<'a> {
-    pub fn new(slice: &'a [u8], offsets: &'a [usize]) -> Self {
-        return Record {
-            data: slice,
-            offsets: offsets,
-            current_field: 0,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        return self.offsets.len()-1;
-    }
-}
-impl<'a> fmt::Debug for Record<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for i in 0..self.len() {
-            if i != 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "\"{}\"", &self[i])?;
-        }
-        Ok(())
-    }
-}
-impl<'a> Index<usize> for Record<'a> {
-    type Output = str;
-    fn index(&self, index: usize) -> &Self::Output {
-        let (start, mut end) = (self.offsets[index], self.offsets[index+1]);
-        if index < self.len() - 1 {
-            end -= 1;
-        }
-        return str::from_utf8(&self.data[start..end]).unwrap();
-    }
-}
-
-impl<'a> PartialEq<Vec<&str>> for Record<'a> {
-    fn eq(&self, other: &Vec<&str>) -> bool {
-        if self.len() != other.len() {
-            return false
-        }
-        for i in 0..self.len() {
-            if &self[i] != other[i] {
-                return false
-            }
-        }
-        return true
-    }
-
-}
-
-impl<'lend, 'a> Lending<'lend> for Record<'a> {
-    type Lend = &'lend [u8];
-}
-impl<'a> Lender for Record<'a> {
-    fn next(&mut self) -> Option<&'_ [u8]> {
-        if self.offsets.len() == 0 || !(self.current_field < self.offsets.len() -1){
-            return None
-        }
-        let (start, end) = (self.offsets[self.current_field], self.offsets[self.current_field+1]);
-        self.current_field += 1;
-        Some(&self.data[start..end])
-    }
-}
-
 
 #[derive(Clone, Copy)]
 pub struct Dialect {
@@ -94,14 +31,33 @@ pub struct Dialect {
     pub quotechar: char,
     pub skipinitialspace: bool,
     pub strict: bool,
+    pub splats: Splats,
 }
 
 pub fn default_dialect() -> Dialect {
-    return Dialect {
-        delimiter: ',',
-        quotechar: '\"',
-        skipinitialspace: false,
-        strict: false,
+    return Dialect::new(
+        ',',
+        '\"',
+        false,
+        false,
+    );
+}
+
+impl Dialect {
+    pub fn new(delimiter: char, quotechar: char, skipinitialspace: bool, strict: bool) -> Self {
+        let splats = Splats {
+            delimiter: Simd::splat(delimiter as u8),
+            quotechar: Simd::splat(quotechar as u8),
+            newline: Simd::splat(b'\n'),
+            returnchar: Simd::splat(b'\r'),
+        };
+        return Dialect {
+            delimiter,
+            quotechar,
+            skipinitialspace,
+            strict,
+            splats: splats,
+        }
     }
 }
 
@@ -112,7 +68,6 @@ pub struct Parser<T: Read> {
     pub dialect: Dialect,
     pub inside_quotes: bool,
     pub bufreader: AlignedBuffer<T>,
-    data: Vec<u8>,
     delimiters: Vec<usize>,
 }
 impl<T: Read> Parser<T> {
@@ -121,7 +76,6 @@ impl<T: Read> Parser<T> {
             dialect: dialect,
             inside_quotes: false,
             bufreader: bufreader,
-            data: Vec::<u8>::new(),
             delimiters: Vec::<usize>::new(),
         }
     }
@@ -135,39 +89,49 @@ impl<T: Read> Parser<T> {
         return mask | (mask - 1);
     }
 
-    fn chunk_delimiter_offsets(chunk: [u8; CHUNK_SIZE], dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32) {
+    #[inline(always)]
+    fn chunk_delimiter_offsets(chunk: &[u8], dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32, usize) {
         // create the simd line
-        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_array(chunk);
+        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
 
         // find delimiters and quotes
-        let delimiter_locations = simd_line.simd_eq(Simd::splat(dialect.delimiter as u8));
-        let quote_locations = simd_line.simd_eq(Simd::splat(dialect.quotechar as u8));
-        let mut quote_locations_mask = quote_locations.to_bitmask();
+        let delimiter_locations = simd_line.simd_eq(dialect.splats.delimiter).to_bitmask();
+        let quote_locations = simd_line.simd_eq(dialect.splats.quotechar).to_bitmask();
+        let newline_locations = simd_line.simd_eq(dialect.splats.newline).to_bitmask();
+        let return_locations = simd_line.simd_eq(dialect.splats.returnchar).to_bitmask();
+
+        let quote_locations_mask = quote_locations;
         let unescaped_quote_count = quote_locations_mask.count_ones();
 
         // xor with current inside quotes state to get correct quote mask
         let quote_mask = quote_locations_mask ^ inside_quotes as u64;
-        let inside_quotes = clmul64!(!0u64, quote_mask) as u64;
-        let filtered_delimiter_locations: u64 = delimiter_locations.to_bitmask() & !inside_quotes;
+        let inside_quotes = !clmul64!(!0u64, quote_mask) as u64;
+        let filtered_delimiter_locations: u64 = delimiter_locations & inside_quotes;
 
         // calculate where newlines are
-        let newline_locations = simd_line.simd_eq(Simd::splat(b'\n'));
-        let return_locations = simd_line.simd_eq(Simd::splat(b'\r'));
-        let newline_return_locations: Mask<i8, 64> = return_locations & newline_locations.shift_elements_right::<1>(true);
+        let newline_return_locations = newline_locations << 1 & return_locations;
 
-        let all_newline_locations = newline_locations | newline_return_locations | return_locations;
-        let filtered_newline_locations: u64 = all_newline_locations.to_bitmask() & !inside_quotes;
+        let filtered_newline_locations_size_1: u64 = (newline_locations | return_locations) & inside_quotes;
+        let filtered_newline_locations_size_2: u64 = newline_return_locations & inside_quotes;
 
         // ignore any delimiter offsets past the newline
-        let first_newline = filtered_newline_locations.trailing_zeros() as usize;
-        return (filtered_delimiter_locations, first_newline, unescaped_quote_count)
+        let first_newline_size_1 = filtered_newline_locations_size_1.trailing_zeros() as usize;
+        let first_newline_size_2 = filtered_newline_locations_size_2.trailing_zeros() as usize;
+        if first_newline_size_1 < first_newline_size_2 {
+            return (filtered_delimiter_locations, first_newline_size_1, unescaped_quote_count, 1)
+        }
+        return (filtered_delimiter_locations, first_newline_size_2, unescaped_quote_count, 2)
     }
 
-
-    fn process_buffer_chunks(&mut self) -> Option<Record<'_>> {
-        self.data.clear();
+    fn reset_line_state(&mut self) {
         self.delimiters.clear();
         self.delimiters.push(0);
+        self.bufreader.start_line();
+        self.inside_quotes = false;
+    }
+
+    fn process_buffer_chunks(&mut self) -> Option<Record<'_>> {
+        self.reset_line_state();
         // to minimize data copies, we keep track of the current offset for each delimiter.
         // if the chunk has no newline, we copy over the whole thing. If it has a newline, copy up till the newline.
         let mut last_offset = 0;
@@ -177,7 +141,12 @@ impl<T: Read> Parser<T> {
             if n == 0 {
                 break
             }
-            let (mut delimiter_offsets, first_newline, quote_count) = Self::chunk_delimiter_offsets(chunk, self.dialect, self.inside_quotes);
+            let (mut delimiter_offsets, first_newline, quote_count, newline_size) = Self::chunk_delimiter_offsets(chunk, self.dialect, self.inside_quotes);
+            if first_newline <= newline_size && self.delimiters.len() == 1{
+                self.bufreader.consume(newline_size);
+                self.reset_line_state();
+                continue;
+            }
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;
             }
@@ -195,16 +164,14 @@ impl<T: Read> Parser<T> {
                 last_delimiter_offset = pos+1;
             }
             if first_newline != CHUNK_SIZE && first_newline <= n {
-                self.data.extend_from_slice(&chunk[0..first_newline]);
                 last_offset += first_newline - last_delimiter_offset;
                 self.delimiters.push(last_offset);
-                self.bufreader.consume(min(n, first_newline+1));
+                self.bufreader.consume(min(n, first_newline));
                 return Some(Record::new(
-                    self.data.as_slice(),
+                    self.bufreader.get_line_slice(),
                     self.delimiters.as_slice(),
                 ));
             }
-            self.data.extend_from_slice(&chunk[0..n]);
             last_offset += n - last_delimiter_offset;
             self.bufreader.consume(n);
         }

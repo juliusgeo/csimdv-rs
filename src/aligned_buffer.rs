@@ -7,6 +7,7 @@ pub struct AlignedBuffer<T: Read> {
     start: usize,
     valid_bytes: usize,
     reader: T,
+    line_start: usize,
 }
 
 impl<T: Read> AlignedBuffer<T> {
@@ -16,6 +17,7 @@ impl<T: Read> AlignedBuffer<T> {
             start: 0,
             valid_bytes: 0,
             reader,
+            line_start: 0,
         };
         new_buffer.fill_buf_initial();
         return new_buffer;
@@ -33,23 +35,33 @@ impl<T: Read> AlignedBuffer<T> {
         }
     }
 
-    pub fn get_chunk(&mut self) -> ([u8; CHUNK_SIZE], usize) {
+    pub fn get_chunk(&mut self) -> (&[u8], usize) {
+        // the amount of valid bytes before we need to start moving buffer
         let remaining = self.valid_bytes - self.start;
         if remaining < CHUNK_SIZE {
-            self.buffer.copy_within(self.start..BUFFER_SIZE, 0);
-            let res = self.reader.read(&mut self.buffer[remaining..]);
+            self.buffer.copy_within(self.line_start..BUFFER_SIZE, 0);
+            let line_remaining = self.valid_bytes - self.line_start;
+            let res = self.reader.read(&mut self.buffer[line_remaining..]);
             match res {
                 Ok(r) => {
-                    self.valid_bytes = remaining + r
+                    self.valid_bytes = line_remaining + r
                 }
                 Err(r) => {
                     panic!("Error reading from input: {:?}", r);
                 }
             }
-            self.start = 0;
+            self.start = self.start - self.line_start;
+            self.line_start = 0;
         }
-        let arr: [u8; CHUNK_SIZE] = unsafe { self.buffer[self.start..self.start+CHUNK_SIZE].try_into().unwrap_unchecked() };
-        return (arr, min(self.valid_bytes - self.start, CHUNK_SIZE));
+        return (&self.buffer[self.start..self.start+CHUNK_SIZE], min(self.valid_bytes - self.start, CHUNK_SIZE));
+    }
+
+    pub fn start_line(&mut self) {
+        self.line_start = self.start;
+    }
+
+    pub fn get_line_slice(&self) -> &[u8] {
+        &self.buffer[self.line_start..self.start]
     }
 
     pub fn consume(&mut self, amt: usize) {
