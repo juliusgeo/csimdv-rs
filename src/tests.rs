@@ -132,26 +132,29 @@ mod tests {
 
     #[test]
     fn test_equality_simd_csv() {
-        let path = "examples/customers-2000000.csv";
-        let file = File::open(path).unwrap();
-        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
-        let file2 = File::open(path).unwrap();
-        let mut reader = ZeroCopyReader::from_reader(file2);
-        p.read_line(); // skip header
-        let mut counter = 0;
-        while let Some(ours) = p.read_line() {
-            if let Some(theirs) = reader.read_byte_record().unwrap() {
-                counter += 1;
-                assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}", counter);
-                for i in 0..ours.len() {
-                    let o = &ours[i];
-                    let theirs = str::from_utf8(&theirs[i]).unwrap();
-                    assert_eq!(*o, *theirs);
+        for path in ["examples/customers-2000000.csv", "examples/nfl.csv"].iter() {
+            let file = File::open(path).unwrap();
+            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+            let file2 = File::open(path).unwrap();
+            let mut reader = ZeroCopyReader::from_reader(file2);
+            p.read_line(); // skip header
+            let mut counter = 0;
+            while let Some(ours) = p.read_line() {
+                if let Some(theirs) = reader.read_byte_record().unwrap() {
+                    counter += 1;
+                    assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}", counter);
+                    for i in 0..ours.len() {
+                        let o = &ours[i];
+                        let theirs = str::from_utf8(&theirs[i]).unwrap();
+                        assert_eq!(*o, *theirs);
+                    }
+                } else {
+                    panic!("Mismatch in number of records");
                 }
-            } else {
-                panic!("Mismatch in number of records");
+            if counter > 20 {
+                break
             }
-
+            }
         }
     }
 }

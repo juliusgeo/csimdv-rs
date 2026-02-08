@@ -6,7 +6,7 @@ macro_rules! clmul64 {
             use core::arch::x86_64::*;
             let va = _mm_set_epi64x(0, $a as i64);
             let vb = _mm_set_epi64x(0, $b as i64);
-            let r = _mm_clmulepi64_si128(va, vb, 0x00);
+            let r = _mm_cvtsi128_si64(_mm_clmulepi64_si128(va, vb, 0x00)) as u64;
             r
         }
 
