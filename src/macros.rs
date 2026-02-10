@@ -30,18 +30,19 @@ macro_rules! simd_eq_bitmask {
     ($chunk:expr, $a:expr, $b:expr, $c:expr, $d:expr) => {{
         #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
         unsafe {
-            dbg!("using avx-512");
             use core::arch::x86_64::*;
             let chunk_ptr = $chunk.as_array().as_ptr() as *const __m512i;
             let chunk = _mm512_loadu_si512(chunk_ptr);
-            unsafe fn check_bytes_eq_avx512(a: __m512i, b: Simd<u8, CHUNK_SIZE>) -> u64 {
-                unsafe {
-                    let loaded_b = _mm512_loadu_si512(b.as_array().as_ptr() as *const __m512i);
-                    _mm512_cmpeq_epi8_mask(a, loaded_b)
-                }
+            let a = _mm512_loadu_si512($a.as_array().as_ptr() as *const __m512i);
+            let b = _mm512_loadu_si512($b.as_array().as_ptr() as *const __m512i);
+            let c = _mm512_loadu_si512($c.as_array().as_ptr() as *const __m512i);
+            let d = _mm512_loadu_si512($d.as_array().as_ptr() as *const __m512i);
+
+            unsafe fn check_bytes_eq_avx512(a: __m512i, b: __m512i) -> u64 {
+                _mm512_cmpeq_epi8_mask(a, b)
             }
             // dbg!(check_bytes_eq_avx512(chunk, a));
-            (check_bytes_eq_avx512(chunk, $a), check_bytes_eq_avx512(chunk, $b), check_bytes_eq_avx512(chunk, $c), check_bytes_eq_avx512(chunk, $d))
+            (check_bytes_eq_avx512(chunk, a), check_bytes_eq_avx512(chunk, b), check_bytes_eq_avx512(chunk, c), check_bytes_eq_avx512(chunk, d))
         }
 
         #[cfg(all(target_arch = "aarch64"))]
