@@ -7,12 +7,10 @@ pub mod aligned_buffer;
 mod constants;
 mod record;
 
-use std::arch::aarch64::vld4q_u8;
 use crate::record::Record;
 use std::cmp::min;
 use std::io::Read;
 use std::simd::{Simd};
-use std::simd::cmp::SimdPartialEq;
 use std::ops::Index;
 use crate::aligned_buffer::AlignedBuffer;
 use crate::constants::{CHUNK_SIZE};

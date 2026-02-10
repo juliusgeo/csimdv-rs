@@ -7,8 +7,6 @@ edition = "2024"
 [build]
 rustflags = ["-C", "target-feature=+aes,+neon"]
 
-[dependencies]
-lender = "0.4.0"
 
 [[bench]]
 path = "benches/benchmarks.rs"

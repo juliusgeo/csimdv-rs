@@ -3,7 +3,6 @@ use simd_csv::ZeroCopyReader;
 use csimdv::default_dialect;
 use csimdv::Parser;
 use std::fs::File;
-use lender::Lender;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use csimdv::aligned_buffer::AlignedBuffer;
 use std::fs;

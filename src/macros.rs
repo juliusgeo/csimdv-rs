@@ -28,12 +28,24 @@ macro_rules! clmul64 {
 #[macro_export]
 macro_rules! simd_eq_bitmask {
     ($chunk:expr, $a:expr, $b:expr, $c:expr, $d:expr) => {{
-        #[cfg(all(target_arch = "x86_64"))]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
         unsafe {
-            ($chunk.simd_eq(a).to_bitmask(), $chunk.simd_eq(b).to_bitmask(), $chunk.simd_eq(c).to_bitmask(), $chunk.simd_eq(d).to_bitmask())
+            use core::arch::x86_64::*;
+            let chunk_ptr = $chunk.as_array().as_ptr() as *const __m512i;
+            let chunk = _mm512_loadu_si512(chunk_ptr);
+            let a = _mm512_loadu_si512($a.as_array().as_ptr() as *const __m512i);
+            let b = _mm512_loadu_si512($b.as_array().as_ptr() as *const __m512i);
+            let c = _mm512_loadu_si512($c.as_array().as_ptr() as *const __m512i);
+            let d = _mm512_loadu_si512($d.as_array().as_ptr() as *const __m512i);
+
+            unsafe fn check_bytes_eq_avx512(a: __m512i, b: __m512i) -> u64 {
+                _mm512_cmpeq_epi8_mask(a, b)
+            }
+            // dbg!(check_bytes_eq_avx512(chunk, a));
+            (check_bytes_eq_avx512(chunk, a), check_bytes_eq_avx512(chunk, b), check_bytes_eq_avx512(chunk, c), check_bytes_eq_avx512(chunk, d))
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
+        #[cfg(all(target_arch = "aarch64"))]
         unsafe {
             use core::arch::aarch64::*;
             let chunk = vld4q_u8($chunk.as_array().as_ptr());
@@ -70,9 +82,9 @@ macro_rules! simd_eq_bitmask {
         }
 
         #[cfg(not(any(
-            all(target_arch = "x86_64"),
+            all(target_arch = "x86_64", any(target_feature = "avx512f", target_feature="avx2")),
             all(target_arch = "aarch64", target_feature = "neon")
         )))]
-        compile_error!("CLMUL not supported on this architecture");
+        compile_error!("simd intrinsics not supported on this architecture");
     }};
 }

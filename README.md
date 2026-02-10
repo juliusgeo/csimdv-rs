@@ -11,7 +11,8 @@ many other SIMD based parsers do (most notably simdjson). To be fair, this trick
 the state reason that `simd-csv` does not use it. However, I wanted to see if I could make a version of `simd-csv` that 
 did use this trick, and see how much of a performance boost it would give.
 
-I also chose to use `portable_simd`, which requires Rust nightly builds, to make the SIMD code more readonable.
+I also chose to use `portable_simd`, which requires Rust nightly builds, to make the SIMD code more readable. However,
+I end up using intrinsics in the important parts of the implementation, so I will likely drop the dependency there soon.
 
 Similarities
 ----------
@@ -31,7 +32,7 @@ while let Some(mut record) = p.read_line() {
 Performance
 ----------
 This is where it gets interesting--I'm sure there are quite a few optimizations I could perform on my existing code. However,
-notably, this library is only fast on x86_64 targets. On aarch64, it is roughly 25% slower than `simd-csv`, and on x86_64, it is roughly 50% faster than `simd-csv`.
+notably, this library is only fast on x86_64 targets. On aarch64, it is roughly 5-15% slower than `simd-csv`, and on x86_64, it is roughly 50% faster than `simd-csv`.
 
 Now, as to why this performance varies by target, based on benchmarking I believe it is due to better `simd_eq` code generation
 on x86_64 targets, which is used heavily to construct the bitmasks that are then used in the `pclmulqdq` step to escape delimiters and newlines inside quotes.
@@ -42,5 +43,6 @@ let quote_locations = simd_line.simd_eq(dialect.splats.quotechar).to_bitmask();
 let newline_locations = simd_line.simd_eq(dialect.splats.newline).to_bitmask();
 let return_locations = simd_line.simd_eq(dialect.splats.returnchar).to_bitmask();
 ```
-This could be mitigated by using `vpshufb` or `vtbl` to find the locations of the structural characters in fewer instructions,
-while also avoiding expensive `simd_eq` calls. However, I have not gotten around to implementing this.
+On aarch64, this is mitigated somewhat by using intrinsics, as well as a [trick](https://validark.dev/posts/interleaved-vectors-on-arm/)
+to calculate the bitmask and the simd_eq in fewer instructions. Compared to Intel, it will always be slower because there is no equivalent to the
+`movemask` instruction, which allows for a single instruction to calculate the bitmask from the SIMD register. 
