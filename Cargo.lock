@@ -168,7 +168,6 @@ name = "csimdv"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "lender",
  "simd-csv",
 ]
 
@@ -177,12 +176,6 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
-
-[[package]]
-name = "fallible-iterator"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
 
 [[package]]
 name = "half"
@@ -218,28 +211,6 @@ checksum = "8c942ebf8e95485ca0d52d97da7c5a2c387d0e7f0ba4c35e93bfcaee045955b3"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "lender"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c150e24afda8f769930a339cb5ad6e182101fdf1165c30c157b33ce5050fd7ad"
-dependencies = [
- "fallible-iterator",
- "lender-derive",
- "stable_try_trait_v2",
-]
-
-[[package]]
-name = "lender-derive"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556faf0c9adb22669a5f9f6b4ed804c8048d205dcd00fadd463affbb02931d26"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -430,12 +401,6 @@ checksum = "cb8345c294dd2dd03346b00a38737587a928e361f17356b3858631f19c1c90d7"
 dependencies = [
  "memchr",
 ]
-
-[[package]]
-name = "stable_try_trait_v2"
-version = "1.75.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c4e48411f4db8ccca0470bfb67e3bb821af4227d455aa147917d8d109be0d13"
 
 [[package]]
 name = "syn"
