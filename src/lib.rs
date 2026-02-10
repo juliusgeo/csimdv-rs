@@ -7,6 +7,7 @@ pub mod aligned_buffer;
 mod constants;
 mod record;
 
+use std::arch::aarch64::vld4q_u8;
 use crate::record::Record;
 use std::cmp::min;
 use std::io::Read;
@@ -45,11 +46,15 @@ pub fn default_dialect() -> Dialect {
 
 impl Dialect {
     pub fn new(delimiter: char, quotechar: char, skipinitialspace: bool, strict: bool) -> Self {
+        let a: Simd<u8, CHUNK_SIZE> = Simd::splat(delimiter as u8);
+        let b: Simd<u8, CHUNK_SIZE> = Simd::splat(quotechar as u8);
+        let c: Simd<u8, CHUNK_SIZE> = Simd::splat(b'\n');
+        let d: Simd<u8, CHUNK_SIZE> = Simd::splat(b'\r');
         let splats = Splats {
-            delimiter: Simd::splat(delimiter as u8),
-            quotechar: Simd::splat(quotechar as u8),
-            newline: Simd::splat(b'\n'),
-            returnchar: Simd::splat(b'\r'),
+            delimiter: a,
+            quotechar: b,
+            newline: c,
+            returnchar: d,
         };
         return Dialect {
             delimiter,
@@ -60,9 +65,6 @@ impl Dialect {
         }
     }
 }
-
-
-
 
 pub struct Parser<T: Read> {
     pub dialect: Dialect,
@@ -80,25 +82,12 @@ impl<T: Read> Parser<T> {
         }
     }
 
-    fn mask_invalid_bytes(valid_bytes: usize) -> u64 {
-        if valid_bytes >= 64 {
-            return !0u64;
-        }
-        let mask_limit = 1 << (valid_bytes-1);
-        let mask = mask_limit & (!mask_limit + 1);
-        return mask | (mask - 1);
-    }
-
     #[inline(always)]
     fn chunk_delimiter_offsets(chunk: &[u8], dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32, usize) {
         // create the simd line
-        let simd_line:Simd<u8, CHUNK_SIZE> = Simd::from_slice(chunk);
-
+        let chunk_simd = Simd::<u8, CHUNK_SIZE>::from_slice(chunk);
         // find delimiters and quotes
-        let delimiter_locations = simd_line.simd_eq(dialect.splats.delimiter).to_bitmask();
-        let quote_locations = simd_line.simd_eq(dialect.splats.quotechar).to_bitmask();
-        let newline_locations = simd_line.simd_eq(dialect.splats.newline).to_bitmask();
-        let return_locations = simd_line.simd_eq(dialect.splats.returnchar).to_bitmask();
+        let (delimiter_locations, quote_locations, newline_locations, return_locations) = simd_eq_bitmask!(chunk_simd, dialect.splats.delimiter, dialect.splats.quotechar, dialect.splats.newline, dialect.splats.returnchar);
 
         let quote_locations_mask = quote_locations;
         let unescaped_quote_count = quote_locations_mask.count_ones();

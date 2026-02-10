@@ -24,3 +24,55 @@ macro_rules! clmul64 {
         compile_error!("CLMUL not supported on this architecture");
     }};
 }
+
+#[macro_export]
+macro_rules! simd_eq_bitmask {
+    ($chunk:expr, $a:expr, $b:expr, $c:expr, $d:expr) => {{
+        #[cfg(all(target_arch = "x86_64"))]
+        unsafe {
+            ($chunk.simd_eq(a).to_bitmask(), $chunk.simd_eq(b).to_bitmask(), $chunk.simd_eq(c).to_bitmask(), $chunk.simd_eq(d).to_bitmask())
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
+        unsafe {
+            use core::arch::aarch64::*;
+            let chunk = vld4q_u8($chunk.as_array().as_ptr());
+
+            // trick from here: https://validark.dev/posts/interleaved-vectors-on-arm/
+            pub unsafe fn check_bytes_eq_neon(
+                a: uint8x16x4_t,
+                b: Simd<u8, CHUNK_SIZE>,
+            ) -> u64 {
+                // cmeq (vector-vector)
+                unsafe {
+                    let b = vld4q_u8(b.as_array().as_ptr());
+
+                    let cmp1 = vceqq_u8(a.2, b.2);
+                    let cmp2 = vceqq_u8(a.3, b.3);
+                    let cmp3 = vceqq_u8(a.0, b.0);
+                    let cmp4 = vceqq_u8(a.1, b.1);
+
+                    // sri packing (unchanged)
+                    let v0 = vsriq_n_u8::<1>(cmp4, cmp3);
+                    let v6 = vsriq_n_u8::<1>(cmp2, cmp1);
+                    let v6 = vsriq_n_u8::<2>(v6, v0);
+                    let v6 = vsriq_n_u8::<4>(v6, v6);
+
+                    // shrn v0.8b, v6.8h, #4
+                    let v6h: uint16x8_t = vreinterpretq_u16_u8(v6);
+                    let v0n: uint8x8_t = vshrn_n_u16::<4>(v6h);
+
+                    // fmov x0, d0
+                    vget_lane_u64::<0>(vreinterpret_u64_u8(v0n))
+                }
+            }
+            (check_bytes_eq_neon(chunk, $a), check_bytes_eq_neon(chunk, $b), check_bytes_eq_neon(chunk, $c), check_bytes_eq_neon(chunk, $d))
+        }
+
+        #[cfg(not(any(
+            all(target_arch = "x86_64"),
+            all(target_arch = "aarch64", target_feature = "neon")
+        )))]
+        compile_error!("CLMUL not supported on this architecture");
+    }};
+}

@@ -96,12 +96,6 @@ mod tests {
     }
 
     #[test]
-    fn test_delimiter_masking() {
-        let mask = Parser::<File>::mask_invalid_bytes(16);
-        assert_eq!(mask & 1 << 17 , 0);
-    }
-
-    #[test]
     fn test_parse_file() {
         let file = File::open("examples/customers-2000000.csv").unwrap();
         let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
@@ -151,9 +145,6 @@ mod tests {
                 } else {
                     panic!("Mismatch in number of records");
                 }
-            if counter > 20 {
-                break
-            }
             }
         }
     }
