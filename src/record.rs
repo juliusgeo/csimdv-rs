@@ -75,7 +75,7 @@ impl<'a> RecordIterator<'a> {
 impl<'a> Iterator for RecordIterator<'a> {
     type Item = &'a [u8];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.record.offsets.len() == 0 || self.current_field >= self.record.offsets.len() - 1 {
+        if self.current_field >= self.record.len() - 1 {
             return None
         }
         let index = self.current_field;
