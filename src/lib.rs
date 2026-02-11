@@ -1,4 +1,3 @@
-#![feature(portable_simd)]
 #![feature(test)]
 
 mod tests;
@@ -10,18 +9,19 @@ mod record;
 use crate::record::Record;
 use std::cmp::min;
 use std::io::Read;
-use std::simd::{Simd};
 use std::ops::Index;
 use crate::aligned_buffer::AlignedBuffer;
 use crate::constants::{CHUNK_SIZE};
+use crate::macros::ChunkSimd;
+
 extern crate test;
 
 #[derive(Clone, Copy)]
 pub struct Splats {
-    pub delimiter: Simd<u8, CHUNK_SIZE>,
-    pub quotechar: Simd<u8, CHUNK_SIZE>,
-    pub newline: Simd<u8, CHUNK_SIZE>,
-    pub returnchar: Simd<u8, CHUNK_SIZE>,
+    pub delimiter: ChunkSimd,
+    pub quotechar: ChunkSimd,
+    pub newline: ChunkSimd,
+    pub returnchar: ChunkSimd,
 }
 
 #[derive(Clone, Copy)]
@@ -44,10 +44,10 @@ pub fn default_dialect() -> Dialect {
 
 impl Dialect {
     pub fn new(delimiter: char, quotechar: char, skipinitialspace: bool, strict: bool) -> Self {
-        let a: Simd<u8, CHUNK_SIZE> = Simd::splat(delimiter as u8);
-        let b: Simd<u8, CHUNK_SIZE> = Simd::splat(quotechar as u8);
-        let c: Simd<u8, CHUNK_SIZE> = Simd::splat(b'\n');
-        let d: Simd<u8, CHUNK_SIZE> = Simd::splat(b'\r');
+        let a: ChunkSimd = load_simd!([delimiter as u8; CHUNK_SIZE]);
+        let b: ChunkSimd = load_simd!([quotechar as u8; CHUNK_SIZE]);
+        let c: ChunkSimd = load_simd!([b'\n' as u8; CHUNK_SIZE]);
+        let d: ChunkSimd = load_simd!([b'\r' as u8; CHUNK_SIZE]);
         let splats = Splats {
             delimiter: a,
             quotechar: b,
@@ -83,7 +83,7 @@ impl<T: Read> Parser<T> {
     #[inline(always)]
     fn chunk_delimiter_offsets(chunk: &[u8], dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32, usize) {
         // create the simd line
-        let chunk_simd = Simd::<u8, CHUNK_SIZE>::from_slice(chunk);
+        let chunk_simd = load_simd!(chunk);
         // find delimiters and quotes
         let (delimiter_locations, quote_locations, newline_locations, return_locations) = simd_eq_bitmask!(chunk_simd, dialect.splats.delimiter, dialect.splats.quotechar, dialect.splats.newline, dialect.splats.returnchar);
 
