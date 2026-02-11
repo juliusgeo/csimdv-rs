@@ -31,18 +31,11 @@ while let Some(mut record) = p.read_line() {
 
 Performance
 ----------
-This is where it gets interesting--I'm sure there are quite a few optimizations I could perform on my existing code. However,
-notably, this library is only fast on x86_64 targets. On aarch64, it is roughly 5-15% slower than `simd-csv`, and on x86_64, it is roughly 50% faster than `simd-csv`.
+The bulk of the runtime of this parser is spent doing comparisons between the current chunk of data and delimiter, quote, and newline characters.
+The target architecture plays a large role in how effective this approach is compared to `simd_csv`. 
+I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
+especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by using a [trick](https://validark.dev/posts/interleaved-vectors-on-arm/) that results in slightly faster bitmask generation.
+Additionally, because the comparisons are done against a fixed chunk of bytes, with varying splats based on the newline, delimiter, etc, 3 vector loads can be avoided by using handwritten intrinsics.
 
-Now, as to why this performance varies by target, based on benchmarking I believe it is due to better `simd_eq` code generation
-on x86_64 targets, which is used heavily to construct the bitmasks that are then used in the `pclmulqdq` step to escape delimiters and newlines inside quotes.
-```rust
-// find delimiters and quotes
-let delimiter_locations = simd_line.simd_eq(dialect.splats.delimiter).to_bitmask();
-let quote_locations = simd_line.simd_eq(dialect.splats.quotechar).to_bitmask();
-let newline_locations = simd_line.simd_eq(dialect.splats.newline).to_bitmask();
-let return_locations = simd_line.simd_eq(dialect.splats.returnchar).to_bitmask();
-```
-On aarch64, this is mitigated somewhat by using intrinsics, as well as a [trick](https://validark.dev/posts/interleaved-vectors-on-arm/)
-to calculate the bitmask and the simd_eq in fewer instructions. Compared to Intel, it will always be slower because there is no equivalent to the
-`movemask` instruction, which allows for a single instruction to calculate the bitmask from the SIMD register. 
+On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv`, but on x86_64 with AVX-512 support, it can be up to 50% faster.
+
