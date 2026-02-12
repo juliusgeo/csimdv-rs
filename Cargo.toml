@@ -3,11 +3,6 @@ name = "csimdv"
 version = "0.1.0"
 edition = "2024"
 
-
-[build]
-rustflags = ["-C", "target-feature=+aes,+neon"]
-
-
 [[bench]]
 path = "benches/benchmarks.rs"
 name = "benchmarks"
