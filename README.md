@@ -8,7 +8,7 @@ Differences
 
 `simd-csv` is a fantastic library, however, as noted in the README, does *not* use the ["pclmulqdq"](https://branchfree.org/2019/03/06/code-fragment-finding-quote-pairs-with-carry-less-multiply-pclmulqdq/) trick that
 many other SIMD based parsers do (most notably `simdjson`). To be fair, this trick does not work on all targets, which is
-the state reason that `simd-csv` does not use it. However, I wanted to see if I could make a version of `simd-csv` that 
+the stated reason that `simd-csv` does not use it. However, I wanted to see if I could make a version of `simd-csv` that 
 did use this trick, and see how much of a performance boost it would give.
 
 Similarities
@@ -29,12 +29,12 @@ while let Some(mut record) = p.read_line() {
 Performance
 ----------
 The bulk of the runtime of this parser is spent doing comparisons between the current chunk of data and delimiter, quote, and newline characters.
-The target architecture plays a large role in how effective this approach is compared to `simd_csv`. 
+The target architecture plays a large role in how effective this approach is compared to `simd-csv`. 
 I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
 especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by using a [trick](https://validark.dev/posts/interleaved-vectors-on-arm/) that results in slightly faster bitmask generation.
 Additionally, because the comparisons are done against a fixed chunk of bytes, with varying splats based on the newline, delimiter, etc, 3 vector loads can be avoided by using handwritten intrinsics.
 
-On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv`, but on x86_64 with AVX-512 support, it can be up to 50% faster.
+On aarch64, this results in a parser that is only slightly slower/faster than `simd-csv`, but on x86_64 with AVX-512 support, it can be up to 60% faster.
 
 ### `aarch64 NEON` 
 
