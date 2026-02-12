@@ -36,8 +36,8 @@ Additionally, because the comparisons are done against a fixed chunk of bytes, w
 
 On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv`, but on x86_64 with AVX-512 support, it can be up to 50% faster.
 
-`aarch64` NEON Performance Comparison
---------------------------------
+### `aarch64 NEON` 
+
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
 | [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.1462 GiB/s | 2.0740 GiB/s | 3.48     |
@@ -46,16 +46,16 @@ On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv
 
 Ran on an Apple M1 Max with 64GB of RAM.
 
-`x86_64` AVX-512 Performance Comparison
---------------------------------
+### `x86_64 AVX-512`
+
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
 | [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7538 GiB/s | 1.9902 GiB/s | 38.37    |
 | [nfl.csv](examples%2Fnfl.csv)                         | 2.5444 GiB/s | 1.9423 GiB/s | 31.00    |
 | customers-2000000.csv (not committable, too large)    | 2.6522 GiB/s | 1.6383 GiB/s | 61.89    |
 
-`x86_64` AVX-2 Performance Comparison
---------------------------------
+### `x86_64 AVX-2`
+
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
 | [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7521 GiB/s | 2.0566 GiB/s | 33.82    |
