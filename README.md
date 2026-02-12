@@ -7,7 +7,7 @@ Differences
 ----------
 
 `simd-csv` is a fantastic library, however, as noted in the README, does *not* use the ["pclmulqdq"](https://branchfree.org/2019/03/06/code-fragment-finding-quote-pairs-with-carry-less-multiply-pclmulqdq/) trick that
-many other SIMD based parsers do (most notably simdjson). To be fair, this trick does not work on all targets, which is
+many other SIMD based parsers do (most notably `simdjson`). To be fair, this trick does not work on all targets, which is
 the state reason that `simd-csv` does not use it. However, I wanted to see if I could make a version of `simd-csv` that 
 did use this trick, and see how much of a performance boost it would give.
 
@@ -38,28 +38,28 @@ On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv
 
 `aarch64` NEON Performance Comparison
 --------------------------------
-| File                                                  | `csimdv`      | `simd-csv`    |
-|-------------------------------------------------------|---------------|---------------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.1462 GiB/s  | 2.0740 GiB/s  |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.0444 GiB/s  | 1.8968 GiB/s  |
-| customers-2000000.csv (not committable, too large)    | 1.6593 GiB/s  | 1.7621 GiB/s  |
+| File                                                  | `csimdv`     | `simd-csv`   | % Change |
+|-------------------------------------------------------|--------------|--------------|----------|
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.1462 GiB/s | 2.0740 GiB/s | 3.48     |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.0444 GiB/s | 1.8968 GiB/s | 7.78     |
+| customers-2000000.csv (not committable, too large)    | 1.6593 GiB/s | 1.7621 GiB/s | -5.83    |
 
 Ran on an Apple M1 Max with 64GB of RAM.
 
 `x86_64` AVX-512 Performance Comparison
 --------------------------------
-| File                                                  | `csimdv`     | `simd-csv`    |
-|-------------------------------------------------------|--------------|---------------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7538 GiB/s |  1.9902 GiB/s |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.5444 GiB/s | 1.9423 GiB/s  |
-| customers-2000000.csv (not committable, too large)    | 2.6522 GiB/s |  1.6383 GiB/s  |
+| File                                                  | `csimdv`     | `simd-csv`   | % Change |
+|-------------------------------------------------------|--------------|--------------|----------|
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7538 GiB/s | 1.9902 GiB/s | 38.37    |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.5444 GiB/s | 1.9423 GiB/s | 31.00    |
+| customers-2000000.csv (not committable, too large)    | 2.6522 GiB/s | 1.6383 GiB/s | 61.89    |
 
 `x86_64` AVX-2 Performance Comparison
 --------------------------------
-| File                                                  | `csimdv`     | `simd-csv`    |
-|-------------------------------------------------------|--------------|---------------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7521 GiB/s |  2.0566 GiB/s |
-| [nfl.csv](examples%2Fnfl.csv)                         |  2.5316 GiB/s |  2.0226 GiB/s  |
-| customers-2000000.csv (not committable, too large)    | 2.6630 GiB/s |  1.7053 GiB/s  |
+| File                                                  | `csimdv`     | `simd-csv`   | % Change |
+|-------------------------------------------------------|--------------|--------------|----------|
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7521 GiB/s | 2.0566 GiB/s | 33.82    |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.5316 GiB/s | 2.0226 GiB/s | 25.17    |
+| customers-2000000.csv (not committable, too large)    | 2.6630 GiB/s | 1.7053 GiB/s | 56.16    |
 
-Ran on an AMD Ryzen 7 9800x3d with 32GB of RAM, with `RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f"`.
+Ran on an AMD Ryzen 7 9800x3d with 32GB of RAM, with `RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f"` for AVX2.
