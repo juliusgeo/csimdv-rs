@@ -11,9 +11,6 @@ many other SIMD based parsers do (most notably simdjson). To be fair, this trick
 the state reason that `simd-csv` does not use it. However, I wanted to see if I could make a version of `simd-csv` that 
 did use this trick, and see how much of a performance boost it would give.
 
-I also chose to use `portable_simd`, which requires Rust nightly builds, to make the SIMD code more readable. However,
-I end up using intrinsics in the important parts of the implementation, so I will likely drop the dependency there soon.
-
 Similarities
 ----------
 To make the comparison as fair as possible, I use an API which is very similar to `simd-csv`'s `ZeroCopyReader`, which does
@@ -39,3 +36,12 @@ Additionally, because the comparisons are done against a fixed chunk of bytes, w
 
 On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv`, but on x86_64 with AVX-512 support, it can be up to 50% faster.
 
+`aarch64` Performance Comparison
+--------------------------------
+| File                                                  | `csimdv`      | `simd-csv`    |
+|-------------------------------------------------------|---------------|---------------|
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.1462 GiB/s  | 2.0740 GiB/s  |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.0444 GiB/s  | 1.8968 GiB/s  |
+| customers-2000000.csv (not committable, too large)    | 1.6593 GiB/s  | 1.7621 GiB/s  |
+
+Ran on an Apple M1 Max with 64GB of RAM.
