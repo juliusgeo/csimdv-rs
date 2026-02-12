@@ -36,7 +36,7 @@ Additionally, because the comparisons are done against a fixed chunk of bytes, w
 
 On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv`, but on x86_64 with AVX-512 support, it can be up to 50% faster.
 
-`aarch64` Performance Comparison
+`aarch64` NEON Performance Comparison
 --------------------------------
 | File                                                  | `csimdv`      | `simd-csv`    |
 |-------------------------------------------------------|---------------|---------------|
@@ -45,3 +45,21 @@ On aarch64, this results in a parser that is roughly 5-15% slower than `simd_csv
 | customers-2000000.csv (not committable, too large)    | 1.6593 GiB/s  | 1.7621 GiB/s  |
 
 Ran on an Apple M1 Max with 64GB of RAM.
+
+`x86_64` AVX-512 Performance Comparison
+--------------------------------
+| File                                                  | `csimdv`     | `simd-csv`    |
+|-------------------------------------------------------|--------------|---------------|
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7538 GiB/s |  1.9902 GiB/s |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.5444 GiB/s | 1.9423 GiB/s  |
+| customers-2000000.csv (not committable, too large)    | 2.6522 GiB/s |  1.6383 GiB/s  |
+
+`x86_64` AVX-2 Performance Comparison
+--------------------------------
+| File                                                  | `csimdv`     | `simd-csv`    |
+|-------------------------------------------------------|--------------|---------------|
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7521 GiB/s |  2.0566 GiB/s |
+| [nfl.csv](examples%2Fnfl.csv)                         |  2.5316 GiB/s |  2.0226 GiB/s  |
+| customers-2000000.csv (not committable, too large)    | 2.6630 GiB/s |  1.7053 GiB/s  |
+
+Ran on an AMD Ryzen 7 9800x3d with 32GB of RAM, with `RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f"`.
