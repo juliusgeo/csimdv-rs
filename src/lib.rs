@@ -1,7 +1,7 @@
 #![feature(test)]
 
 mod tests;
-mod macros;
+mod arch;
 pub mod aligned_buffer;
 mod constants;
 mod record;
@@ -12,7 +12,9 @@ use std::io::Read;
 use std::ops::Index;
 use crate::aligned_buffer::AlignedBuffer;
 use crate::constants::{CHUNK_SIZE};
-use crate::macros::ChunkSimd;
+use crate::arch::prefix_xor::clmul64;
+use crate::arch::simd::{ChunkSimd, simd_eq_bitmask, load_simd};
+
 
 extern crate test;
 
@@ -44,10 +46,10 @@ pub fn default_dialect() -> Dialect {
 
 impl Dialect {
     pub fn new(delimiter: char, quotechar: char, skipinitialspace: bool, strict: bool) -> Self {
-        let a: ChunkSimd = load_simd!([delimiter as u8; CHUNK_SIZE]);
-        let b: ChunkSimd = load_simd!([quotechar as u8; CHUNK_SIZE]);
-        let c: ChunkSimd = load_simd!([b'\n' as u8; CHUNK_SIZE]);
-        let d: ChunkSimd = load_simd!([b'\r' as u8; CHUNK_SIZE]);
+        let a: ChunkSimd = load_simd([delimiter as u8; CHUNK_SIZE].as_ptr());
+        let b: ChunkSimd = load_simd([quotechar as u8; CHUNK_SIZE].as_ptr());
+        let c: ChunkSimd = load_simd([b'\n' as u8; CHUNK_SIZE].as_ptr());
+        let d: ChunkSimd = load_simd([b'\r' as u8; CHUNK_SIZE].as_ptr());
         let splats = Splats {
             delimiter: a,
             quotechar: b,
@@ -83,16 +85,16 @@ impl<T: Read> Parser<T> {
     #[inline(always)]
     fn chunk_delimiter_offsets(chunk: &[u8], dialect: Dialect, inside_quotes: bool) -> (u64, usize, u32, usize) {
         // create the simd line
-        let chunk_simd = load_simd!(chunk);
+        let chunk_simd = load_simd(chunk.as_ptr());
         // find delimiters and quotes
-        let (delimiter_locations, quote_locations, newline_locations, return_locations) = simd_eq_bitmask!(chunk_simd, dialect.splats.delimiter, dialect.splats.quotechar, dialect.splats.newline, dialect.splats.returnchar);
+        let (delimiter_locations, quote_locations, newline_locations, return_locations) = simd_eq_bitmask(chunk_simd, dialect.splats.delimiter, dialect.splats.quotechar, dialect.splats.newline, dialect.splats.returnchar);
 
         let quote_locations_mask = quote_locations;
         let unescaped_quote_count = quote_locations_mask.count_ones();
 
         // xor with current inside quotes state to get correct quote mask
         let quote_mask = quote_locations_mask ^ inside_quotes as u64;
-        let inside_quotes = !clmul64!(!0u64, quote_mask) as u64;
+        let inside_quotes = !clmul64(!0u64, quote_mask);
         let filtered_delimiter_locations: u64 = delimiter_locations & inside_quotes;
 
         // calculate where newlines are
