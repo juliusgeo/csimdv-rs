@@ -17,3 +17,6 @@ simd-csv = "0.10.3"
 opt-level = 3
 lto = true
 codegen-units = 1
+
+[lib]
+bench = false
