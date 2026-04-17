@@ -31,8 +31,8 @@ Performance
 The bulk of the runtime of this parser is spent doing comparisons between the current chunk of data and delimiter, quote, and newline characters.
 The target architecture plays a large role in how effective this approach is compared to `simd-csv`. 
 I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
-especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by using a [trick](https://validark.dev/posts/interleaved-vectors-on-arm/) that results in slightly faster bitmask generation.
-Additionally, because the comparisons are done against a fixed chunk of bytes, with varying splats based on the newline, delimiter, etc, 3 vector loads can be avoided by using handwritten intrinsics.
+especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by loading 
+the data interleaved into NEON vectors, allowing the usage of some more efficient bitmask generation techniques.
 
 On aarch64, this results in a parser that is only slightly slower/faster than `simd-csv`, but on x86_64 with AVX-512 support, it can be up to 60% faster.
 
