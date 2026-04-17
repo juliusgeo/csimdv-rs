@@ -3,7 +3,7 @@ use std::io::Read;
 
 use crate::constants::{BUFFER_SIZE, CHUNK_SIZE};
 pub struct AlignedBuffer<T: Read> {
-    buffer: [u8; BUFFER_SIZE],
+    buffer: Box<[u8; BUFFER_SIZE]>,
     start: usize,
     valid_bytes: usize,
     reader: T,
@@ -13,7 +13,7 @@ pub struct AlignedBuffer<T: Read> {
 impl<T: Read> AlignedBuffer<T> {
     pub fn new(reader: T) -> Self {
         let mut new_buffer = AlignedBuffer {
-            buffer: [0u8; BUFFER_SIZE],
+            buffer: Box::new([0u8; BUFFER_SIZE]),
             start: 0,
             valid_bytes: 0,
             reader,
@@ -38,7 +38,7 @@ impl<T: Read> AlignedBuffer<T> {
     pub fn get_chunk(&mut self) -> (&[u8], usize) {
         // the amount of valid bytes before we need to start moving buffer
         let remaining = self.valid_bytes - self.start;
-        if remaining < CHUNK_SIZE {
+        if remaining < CHUNK_SIZE * 2 {
             self.buffer.copy_within(self.line_start..BUFFER_SIZE, 0);
             let line_remaining = self.valid_bytes - self.line_start;
             let res = self.reader.read(&mut self.buffer[line_remaining..]);
@@ -60,8 +60,13 @@ impl<T: Read> AlignedBuffer<T> {
         self.line_start = self.start;
     }
 
-    pub fn get_line_slice(&self) -> &[u8] {
-        &self.buffer[self.line_start..self.start]
+    pub fn get_line_slice(&mut self) -> &[u8] {
+        let ret = &self.buffer[self.line_start..self.start];
+        if self.buffer[self.start] == b'\r' {
+            self.start += 1;
+        };
+        self.start += 1;
+        return ret;
     }
 
     pub fn consume(&mut self, amt: usize) {

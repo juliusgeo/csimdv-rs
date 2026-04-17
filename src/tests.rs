@@ -32,6 +32,15 @@ mod tests {
         assert_eq!(record, vec!["1", "2", "30", "\"300, 400\"",  "4"]);
     }
 
+    #[test]
+    fn test_multi_line_parsing_boundaries() {
+        let line = "1,2,30,300,400,4,1,2,30,300,400,4,400,4,1,2,30,300,400,4,400,4\n\r1,2,30,\"300, 400\",4\n\r";
+        let mut p = Parser::new(default_dialect(), reader_from_str(line));
+        let record = p.read_line().unwrap();
+        let record = p.read_line().unwrap();
+        dbg!(record);
+    }
+
 
     #[test]
     fn test_line_parsing_boundaries() {
@@ -136,12 +145,12 @@ mod tests {
             while let Some(ours) = p.read_line() {
                 if let Some(theirs) = reader.read_byte_record().unwrap() {
                     counter += 1;
-                    assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}", counter);
                     for i in 0..ours.len() {
                         let o = &ours[i];
                         let theirs = str::from_utf8(&theirs[i]).unwrap();
                         assert_eq!(*o, *theirs);
                     }
+                    assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}", counter);
                 } else {
                     panic!("Mismatch in number of records");
                 }
