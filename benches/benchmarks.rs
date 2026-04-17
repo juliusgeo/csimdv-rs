@@ -3,9 +3,10 @@ use simd_csv::ZeroCopyReader;
 use csimdv::default_dialect;
 use csimdv::Parser;
 use std::fs::File;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
 use csimdv::aligned_buffer::AlignedBuffer;
 use std::fs;
+use std::time::Duration;
 
 fn parse_file_simd_csv_zerocopy(path: &str){
     let file = File::open(path).unwrap();
@@ -37,6 +38,7 @@ fn collect_paths(basepath: &str) -> Vec<String> {
 fn comparison_benchmark(c: &mut Criterion) {
     let paths = collect_paths("examples");
     let mut group = c.benchmark_group("CSV Parsing Comparison");
+    group.sampling_mode(SamplingMode::Flat);
     for path in paths.iter() {
         let metadata = fs::metadata(path).unwrap();
         group.throughput(criterion::Throughput::Bytes(metadata.len()));
@@ -46,5 +48,7 @@ fn comparison_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, comparison_benchmark);
+criterion_group!(name = benches;
+                 config = Criterion::default().measurement_time(Duration::from_secs(100));
+                 targets = comparison_benchmark);
 criterion_main!(benches);
