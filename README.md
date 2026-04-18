@@ -28,21 +28,21 @@ while let Some(mut record) = p.read_line() {
 
 Performance
 ----------
-The bulk of the runtime of this parser is spent doing comparisons between the current chunk of data and delimiter, quote, and newline characters.
+The bulk of the runtime of this parser is spent classifying the input characters 64 bytes at a time, using the table lookup approach from `simdjson`.
 The target architecture plays a large role in how effective this approach is compared to `simd-csv`. 
 I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
 especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by loading 
 the data interleaved into NEON vectors, allowing the usage of some more efficient bitmask generation techniques.
 
-On aarch64, this results in a parser that is only slightly slower/faster than `simd-csv`, but on x86_64 with AVX-512 support, it can be up to 60% faster.
+The following benchmark results were all calculated using `criterion-rs` with a `flat` sampling mode with a sampling time of 100s.
 
 ### `aarch64 NEON` 
 
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.1462 GiB/s | 2.0740 GiB/s | 3.48     |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.0444 GiB/s | 1.8968 GiB/s | 7.78     |
-| customers-2000000.csv (not committable, too large)    | 1.6593 GiB/s | 1.7621 GiB/s | -5.83    |
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.0818 GiB/s | 2.1836 GiB/s | -4.7     |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.2262 GiB/s | 1.9017 GiB/s | 17.1     |
+| customers-2000000.csv (not committable, too large)    | 2.3811 /s    | 1.7857 GiB/s | 33.3     |
 
 Ran on an Apple M1 Max with 64GB of RAM.
 
