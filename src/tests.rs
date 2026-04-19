@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_equality_simd_csv() {
-        for path in ["examples/customers-2000000.csv", "examples/nfl.csv"].iter() {
+        for path in ["examples/customers-2000000.csv", "examples/nfl.csv", "examples/EDW.TEST_CAL_DT.csv"].iter() {
             let file = File::open(path).unwrap();
             let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
             let file2 = File::open(path).unwrap();

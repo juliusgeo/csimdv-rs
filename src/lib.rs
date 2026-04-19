@@ -91,13 +91,13 @@ impl<T: Read> Parser<T> {
         let mut last_offset = 0;
         loop {
             // get the next chunk from the buffer, with n<=64 valid bytes
-            let (chunk, mut n) = self.bufreader.get_chunk();
+            let (chunk, n) = self.bufreader.get_chunk();
             if n == 0 {
                 break
             }
             // find delimiters, quotes, newlines
             let (delimiter_locations, quote_locations, newline_locations) = self.classifier.classify(chunk);
-            let (mut delimiter_offsets, mut newline_offsets, quote_count) = Self::chunk_delimiter_offsets(quote_locations, newline_locations, delimiter_locations, self.inside_quotes);
+            let (mut delimiter_offsets,  newline_offsets, quote_count) = Self::chunk_delimiter_offsets(quote_locations, newline_locations, delimiter_locations, self.inside_quotes);
             let first_newline = newline_offsets.trailing_zeros() as usize;
             if quote_count % 2 != 0 {
                 self.inside_quotes = !self.inside_quotes;

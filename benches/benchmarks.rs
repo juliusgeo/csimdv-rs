@@ -49,6 +49,6 @@ fn comparison_benchmark(c: &mut Criterion) {
 }
 
 criterion_group!(name = benches;
-                 config = Criterion::default().measurement_time(Duration::from_secs(100));
+                 config = Criterion::default().measurement_time(Duration::from_secs(50));
                  targets = comparison_benchmark);
 criterion_main!(benches);

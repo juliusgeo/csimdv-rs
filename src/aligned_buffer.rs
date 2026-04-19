@@ -1,30 +1,43 @@
 use std::cmp::min;
 use std::io::Read;
 
-use crate::constants::{BUFFER_SIZE, CHUNK_SIZE};
+use crate::constants::{MIN_BUFFER_SIZE, CHUNK_SIZE};
+
+#[repr(C, align(64))]
 pub struct AlignedBuffer<T: Read> {
-    buffer: Box<[u8; BUFFER_SIZE]>,
+    buffer: Vec<u8>,
     start: usize,
     valid_bytes: usize,
     reader: T,
     line_start: usize,
+    buffer_size: usize,
 }
 
 impl<T: Read> AlignedBuffer<T> {
     pub fn new(reader: T) -> Self {
         let mut new_buffer = AlignedBuffer {
-            buffer: Box::new([0u8; BUFFER_SIZE]),
+            buffer: vec![0u8; MIN_BUFFER_SIZE],
             start: 0,
             valid_bytes: 0,
             reader,
             line_start: 0,
+            buffer_size: MIN_BUFFER_SIZE,
         };
         new_buffer.fill_buf_initial();
         return new_buffer;
     }
 
+    pub fn grow_buf(&mut self) {
+        self.buffer_size *= 2;
+        self.buffer.resize(self.buffer_size, 0);
+    }
+
     pub fn fill_buf_initial(&mut self) {
-        let res = self.reader.read(&mut self.buffer[..]);
+        let res = self.reader.read(
+            unsafe {
+                self.buffer.get_unchecked_mut(0..)
+            }
+        );
         match res {
             Ok(r) => {
                 self.valid_bytes = r
@@ -36,12 +49,34 @@ impl<T: Read> AlignedBuffer<T> {
     }
 
     pub fn get_chunk(&mut self) -> (&[u8], usize) {
+        unsafe {
+            std::hint::assert_unchecked(self.buffer.len() % 64 == 0);
+        }
         // the amount of valid bytes before we need to start moving buffer
         let remaining = self.valid_bytes - self.start;
         if remaining < CHUNK_SIZE * 2 {
-            self.buffer.copy_within(self.line_start..BUFFER_SIZE, 0);
+            // this means that the current line is nearing the size of the buffer, which means we need
+            // to grow the max buffer size by doubling the size of the buffer.
+            if (self.valid_bytes - self.line_start) > self.buffer_size / 2 {
+                // dbg!(remaining, self.line_start, self.start, self.valid_bytes, self.buffer_size);
+                println!("doubling buffer from {} to {}", self.buffer_size, self.buffer_size * 2);
+                self.grow_buf();
+            }
+            // compaction step--move the remaining bytes to the front of the buffer and read into the rest.
+            // unsafe so we don't lose all our speed from bounds checks
+            unsafe {
+                std::ptr::copy(
+                    self.buffer.as_ptr().add(self.line_start),
+                    self.buffer.as_mut_ptr(),
+                    self.valid_bytes - self.line_start,
+                );
+            }
             let line_remaining = self.valid_bytes - self.line_start;
-            let res = self.reader.read(&mut self.buffer[line_remaining..]);
+            let res = self.reader.read(
+                unsafe {
+                    self.buffer.get_unchecked_mut(line_remaining..)
+                }
+            );
             match res {
                 Ok(r) => {
                     self.valid_bytes = line_remaining + r
@@ -53,15 +88,16 @@ impl<T: Read> AlignedBuffer<T> {
             self.start = self.start - self.line_start;
             self.line_start = 0;
         }
-        return (&self.buffer[self.start..self.start+CHUNK_SIZE], min(self.valid_bytes - self.start, CHUNK_SIZE));
+        return (unsafe { self.buffer.get_unchecked(self.start..self.start + CHUNK_SIZE) }, min(self.valid_bytes - self.start, CHUNK_SIZE));
     }
 
     pub fn start_line(&mut self) {
         self.line_start = self.start;
     }
 
+
     pub fn get_line_slice(&mut self) -> &[u8] {
-        let ret = &self.buffer[self.line_start..self.start];
+        let ret = unsafe { self.buffer.get_unchecked(self.line_start..self.start) };
         if self.buffer[self.start] == b'\r' {
             self.start += 1;
         };
