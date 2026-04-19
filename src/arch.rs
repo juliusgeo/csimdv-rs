@@ -1,6 +1,5 @@
 #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
 pub(crate) mod prefix_xor {
-    pub(crate) type ChunkSimd = core::arch::aarch64::uint8x16x4_t;
     pub fn clmul64(a: u64, b:u64) -> u64{
         unsafe {
             use core::arch::x86_64::*;
@@ -30,51 +29,47 @@ pub(crate) mod prefix_xor {
 #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
 pub(crate) mod simd {
     use core::arch::x86_64::*;
-    pub(crate) type ChunkSimd = __m512i;
 
-    pub fn simd_eq_bitmask(chunk: ChunkSimd,
-                           delimiters: ChunkSimd,
-                           quotes: ChunkSimd,
-                           newlines: ChunkSimd,
-                           returns: ChunkSimd) -> (u64, u64, u64, u64) {
-        unsafe {
-            unsafe fn lane_eq_bitmask(a: __m512i, b: __m512i) -> u64 {
-                _mm512_cmpeq_epi8_mask(a, b)
-            }
-            (lane_eq_bitmask(chunk, delimiters), lane_eq_bitmask(chunk, quotes), lane_eq_bitmask(chunk, newlines), lane_eq_bitmask(chunk, returns))
-        }
+    pub struct Classifier {
+        comma_splat: __m512i,
+        newline_splat: __m512i,
+        quote_splat: __m512i,
+        return_splat: __m512i
     }
+    impl Classifier {
+        pub fn new() -> Self {
+            Self {
+                comma_splat: unsafe { _mm512_set1_epi8(',' as i8) },
+                newline_splat: unsafe { _mm512_set1_epi8('\n' as i8) },
+                return_splat: unsafe { _mm512_set1_epi8('\r' as i8) },
+                quote_splat: unsafe { _mm512_set1_epi8('\"' as i8) },
+            }
+        }
 
-    pub fn load_simd(a: *const u8) -> ChunkSimd {
-        unsafe {
-            use core::arch::x86_64::*;
-            let chunk_ptr = a.as_ptr() as *const __m512i;
-            _mm512_loadu_si512(chunk_ptr)
+        #[inline(always)]
+        pub fn classify(&self, chunk: &[u8]) -> (u64, u64, u64) {
+            unsafe {
+                let chunk = _mm512_loadu_si512(chunk.as_ptr() as *const __m512i);
+                (_mm512_cmpeq_epi8_mask(chunk, self.comma_splat),
+                 _mm512_cmpeq_epi8_mask(chunk, self.quote_splat),
+                 _mm512_cmpeq_epi8_mask(chunk, self.newline_splat) | _mm512_cmpeq_epi8_mask(chunk, self.return_splat))
+            }
         }
     }
 }
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2", not(target_feature="avx512f")))]
 pub(crate) mod simd {
     use core::arch::x86_64::*;
 
-    pub(crate) type ChunkSimd = (__m256i, __m256i);
-    pub fn simd_eq_bitmask(chunk: ChunkSimd,
-                           delimiters: ChunkSimd,
-                           quotes: ChunkSimd,
-                           newlines: ChunkSimd,
-                           returns: ChunkSimd) -> (u64, u64, u64, u64) {
-        unsafe {
-            unsafe fn lane_eq_bitmask(a: (__m256i, __m256i), b: (__m256i, __m256i)) -> u64 {
-                let cmp1 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a.0, b.0)) as u32 as u64;
-                let cmp2 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a.1, b.1)) as u32 as u64;
-                (cmp1 | cmp2 << 32)
-            }
-            (lane_eq_bitmask(chunk, delimiters), lane_eq_bitmask(chunk, quotes), lane_eq_bitmask(chunk, newlines), lane_eq_bitmask(chunk, returns))
-
-        }
+    pub struct Classifier {
+        comma_splat: (__m256i, __m256i),
+        newline_splat: (__m256i, __m256i),
+        quote_splat: (__m256i, __m256i),
+        return_splat: (__m256i, __m256i),
     }
 
-    pub fn load_simd(p: *const u8) -> ChunkSimd {
+    pub fn load_simd(p: *const u8) -> (__m256i, __m256i) {
         unsafe {
             use core::arch::x86_64::*;
             let r0 = _mm256_loadu_si256(p as *const __m256i);
@@ -82,7 +77,40 @@ pub(crate) mod simd {
             (r0, r1)
         }
     }
+
+    impl Classifier {
+        #[inline(always)]
+        pub fn new() -> Self {
+            unsafe {
+                Self {
+                    comma_splat: load_simd([b','; 64].as_ptr()),
+                    newline_splat: load_simd([b'\n'; 64].as_ptr()),
+                    return_splat: load_simd([b'\r'; 64].as_ptr()),
+                    quote_splat: load_simd([b'\"'; 64].as_ptr()),
+                }
+            }
+        }
+
+        #[inline(always)]
+        pub fn classify(&self, chunk: &[u8]) -> (u64, u64, u64) {
+            debug_assert!(chunk.len() >= 64);
+
+            unsafe {
+                fn lane_eq_bitmask(a: (__m256i, __m256i), b: (__m256i, __m256i)) -> u64 {
+                    unsafe {
+                        let cmp1 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a.0, b.0)) as u32 as u64;
+                        let cmp2 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a.1, b.1)) as u32 as u64;
+                        (cmp1 | cmp2 << 32)
+                    }
+                }
+                let chunk = load_simd(chunk.as_ptr());
+                (lane_eq_bitmask(chunk, self.comma_splat), lane_eq_bitmask(chunk, self.quote_splat), lane_eq_bitmask(chunk, self.newline_splat) | lane_eq_bitmask(chunk, self.return_splat))
+            }
+        }
+    }
 }
+
+
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub(crate) mod simd {
     use core::arch::aarch64::*;
