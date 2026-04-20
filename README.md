@@ -28,9 +28,10 @@ while let Some(mut record) = p.read_line() {
 
 Performance
 ----------
-The bulk of the runtime of this parser is spent classifying the input characters 64 bytes at a time, using the table lookup approach from `simdjson`.
-The target architecture plays a large role in how effective this approach is compared to `simd-csv`. 
-I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
+
+On AArch64, the table lookup approach used by `simdjson` is used because it saves 1 extra comparison between the data
+and the return character, and the comparisons are quite slow. On x86, just directly comparing the input data and the 4
+characters of interests is faster. I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
 especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by loading 
 the data interleaved into NEON vectors, allowing the usage of some more efficient bitmask generation techniques.
 
@@ -40,9 +41,9 @@ The following benchmark results were all calculated using `criterion-rs` with a 
 
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.0818 GiB/s | 2.1836 GiB/s | -4.7     |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.2262 GiB/s | 1.9017 GiB/s | 17.1     |
-| customers-2000000.csv (not committable, too large)    | 2.3811 /s    | 1.7857 GiB/s | 33.3     |
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.0234 GiB/s | 2.1657 GiB/s | -6.5     |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.4118 GiB/s | 1.8498 GiB/s | 30.4     |
+| customers-2000000.csv (not committable, too large)    | 2.4165 GiB/s | 1.7753 GiB/s | 36.1     |
 
 Ran on an Apple M1 Max with 64GB of RAM.
 
@@ -50,16 +51,16 @@ Ran on an Apple M1 Max with 64GB of RAM.
 
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7538 GiB/s | 1.9902 GiB/s | 38.37    |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.5444 GiB/s | 1.9423 GiB/s | 31.00    |
-| customers-2000000.csv (not committable, too large)    | 2.6522 GiB/s | 1.6383 GiB/s | 61.89    |
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 1.6645 GiB/s | 1.9766 GiB/s | -15.8    |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.5073 GiB/s | 2.0066 GiB/s | 24.9     |
+| customers-2000000.csv (not committable, too large)    | 3.6405 GiB/s | 1.6402 GiB/s | 121.9    |
 
 ### `x86_64 AVX-2`
 
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.7521 GiB/s | 2.0566 GiB/s | 33.82    |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.5316 GiB/s | 2.0226 GiB/s | 25.17    |
-| customers-2000000.csv (not committable, too large)    | 2.6630 GiB/s | 1.7053 GiB/s | 56.16    |
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 1.7015 GiB/s | 2.0572 GiB/s | -17.3    |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.5413 GiB/s | 2.0658 GiB/s | 23.0     |
+| customers-2000000.csv (not committable, too large)    | 3.6090 GiB/s | 1.6854 GiB/s | 114.1    |
 
 Ran on an AMD Ryzen 7 9800x3d with 32GB of RAM, with `RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f"` for AVX2.
