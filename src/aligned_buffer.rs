@@ -32,6 +32,34 @@ impl<T: Read> AlignedBuffer<T> {
         self.buffer.resize(self.buffer_size, 0);
     }
 
+    pub fn compact(&mut self) {
+        // compaction step--move the remaining bytes to the front of the buffer and read into the rest.
+        // unsafe so we don't lose all our speed from bounds checks
+        unsafe {
+            std::ptr::copy(
+                self.buffer.as_ptr().add(self.line_start),
+                self.buffer.as_mut_ptr(),
+                self.valid_bytes - self.line_start,
+            );
+        }
+        let line_remaining = self.valid_bytes - self.line_start;
+        let res = self.reader.read(
+            unsafe {
+                self.buffer.get_unchecked_mut(line_remaining..)
+            }
+        );
+        match res {
+            Ok(r) => {
+                self.valid_bytes = line_remaining + r
+            }
+            Err(r) => {
+                panic!("Error reading from input: {:?}", r);
+            }
+        }
+        self.start = self.start - self.line_start;
+        self.line_start = 0;
+    }
+
     pub fn fill_buf_initial(&mut self) {
         let res = self.reader.read(
             unsafe {
@@ -58,35 +86,10 @@ impl<T: Read> AlignedBuffer<T> {
             // this means that the current line is nearing the size of the buffer, which means we need
             // to grow the max buffer size by doubling the size of the buffer.
             if (self.valid_bytes - self.line_start) > self.buffer_size / 2 {
-                // dbg!(remaining, self.line_start, self.start, self.valid_bytes, self.buffer_size);
-                println!("doubling buffer from {} to {}", self.buffer_size, self.buffer_size * 2);
+                // println!("doubling buffer from {} to {}", self.buffer_size, self.buffer_size * 2);
                 self.grow_buf();
             }
-            // compaction step--move the remaining bytes to the front of the buffer and read into the rest.
-            // unsafe so we don't lose all our speed from bounds checks
-            unsafe {
-                std::ptr::copy(
-                    self.buffer.as_ptr().add(self.line_start),
-                    self.buffer.as_mut_ptr(),
-                    self.valid_bytes - self.line_start,
-                );
-            }
-            let line_remaining = self.valid_bytes - self.line_start;
-            let res = self.reader.read(
-                unsafe {
-                    self.buffer.get_unchecked_mut(line_remaining..)
-                }
-            );
-            match res {
-                Ok(r) => {
-                    self.valid_bytes = line_remaining + r
-                }
-                Err(r) => {
-                    panic!("Error reading from input: {:?}", r);
-                }
-            }
-            self.start = self.start - self.line_start;
-            self.line_start = 0;
+            self.compact();
         }
         return (unsafe { self.buffer.get_unchecked(self.start..self.start + CHUNK_SIZE) }, min(self.valid_bytes - self.start, CHUNK_SIZE));
     }
