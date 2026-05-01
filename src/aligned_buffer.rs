@@ -14,17 +14,21 @@ pub struct AlignedBuffer<T: Read> {
 }
 
 impl<T: Read> AlignedBuffer<T> {
-    pub fn new(reader: T) -> Self {
+
+    pub fn with_capacity(reader: T, capacity: usize) -> Self {
         let mut new_buffer = AlignedBuffer {
-            buffer: vec![0u8; MIN_BUFFER_SIZE],
+            buffer: vec![0u8; capacity],
             start: 0,
             valid_bytes: 0,
             reader,
             line_start: 0,
-            buffer_size: MIN_BUFFER_SIZE,
+            buffer_size: capacity,
         };
         new_buffer.fill_buf_initial();
         return new_buffer;
+    }
+    pub fn new(reader: T) -> Self {
+        return AlignedBuffer::with_capacity(reader, MIN_BUFFER_SIZE);
     }
 
     pub fn grow_buf(&mut self) {
@@ -35,22 +39,22 @@ impl<T: Read> AlignedBuffer<T> {
     pub fn compact(&mut self) {
         // compaction step--move the remaining bytes to the front of the buffer and read into the rest.
         // unsafe so we don't lose all our speed from bounds checks
+        let remaining = self.valid_bytes - self.line_start;
         unsafe {
             std::ptr::copy(
                 self.buffer.as_ptr().add(self.line_start),
                 self.buffer.as_mut_ptr(),
-                self.valid_bytes - self.line_start,
+                remaining,
             );
         }
-        let line_remaining = self.valid_bytes - self.line_start;
         let res = self.reader.read(
             unsafe {
-                self.buffer.get_unchecked_mut(line_remaining..)
+                self.buffer.get_unchecked_mut(remaining..)
             }
         );
         match res {
             Ok(r) => {
-                self.valid_bytes = line_remaining + r
+                self.valid_bytes = remaining + r
             }
             Err(r) => {
                 panic!("Error reading from input: {:?}", r);
@@ -82,7 +86,7 @@ impl<T: Read> AlignedBuffer<T> {
         }
         // the amount of valid bytes before we need to start moving buffer
         let remaining = self.valid_bytes - self.start;
-        if remaining < CHUNK_SIZE * 2 {
+        if remaining < CHUNK_SIZE {
             // this means that the current line is nearing the size of the buffer, which means we need
             // to grow the max buffer size by doubling the size of the buffer.
             if (self.valid_bytes - self.line_start) > self.buffer_size / 2 {
