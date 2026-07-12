@@ -1,6 +1,5 @@
 use std::cmp::min;
 use std::io::Read;
-
 use crate::constants::{MIN_BUFFER_SIZE, CHUNK_SIZE};
 
 #[repr(C, align(64))]
@@ -17,7 +16,7 @@ impl<T: Read> AlignedBuffer<T> {
 
     pub fn with_capacity(reader: T, capacity: usize) -> Self {
         let mut new_buffer = AlignedBuffer {
-            buffer: vec![0u8; capacity],
+            buffer: Vec::with_capacity(capacity),
             start: 0,
             valid_bytes: 0,
             reader,
@@ -32,8 +31,11 @@ impl<T: Read> AlignedBuffer<T> {
     }
 
     pub fn grow_buf(&mut self) {
+        self.buffer.reserve_exact(self.buffer_size);
         self.buffer_size *= 2;
-        self.buffer.resize(self.buffer_size, 0);
+        unsafe {
+            self.buffer.set_len(self.buffer_size);
+        }
     }
 
     pub fn compact(&mut self) {
@@ -65,14 +67,17 @@ impl<T: Read> AlignedBuffer<T> {
     }
 
     pub fn fill_buf_initial(&mut self) {
+        unsafe {
+            self.buffer.set_len(self.buffer_size);
+        }
         let res = self.reader.read(
             unsafe {
-                self.buffer.get_unchecked_mut(0..)
+                self.buffer.as_mut_slice()
             }
         );
         match res {
             Ok(r) => {
-                self.valid_bytes = r
+                self.valid_bytes = r;
             }
             Err(r) => {
                 panic!("Error reading from input: {:?}", r);
@@ -86,7 +91,9 @@ impl<T: Read> AlignedBuffer<T> {
         }
         // the amount of valid bytes before we need to start moving buffer
         let remaining = self.valid_bytes - self.start;
-        if remaining < CHUNK_SIZE {
+        // add 2 so that we have room for a newline and carriage return, which may be consumed by get_line_slice
+        // even if the line is exactly at the end of the buffer.
+        if remaining < CHUNK_SIZE + 2 {
             // this means that the current line is nearing the size of the buffer, which means we need
             // to grow the max buffer size by doubling the size of the buffer.
             if (self.valid_bytes - self.line_start) > self.buffer_size / 2 {

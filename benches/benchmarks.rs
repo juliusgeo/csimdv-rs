@@ -1,4 +1,3 @@
-#![feature(test)]
 use simd_csv::ZeroCopyReader;
 use csimdv::default_dialect;
 use csimdv::Parser;
