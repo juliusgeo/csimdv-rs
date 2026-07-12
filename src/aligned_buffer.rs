@@ -90,7 +90,6 @@ impl<T: Read> AlignedBuffer<T> {
             // this means that the current line is nearing the size of the buffer, which means we need
             // to grow the max buffer size by doubling the size of the buffer.
             if (self.valid_bytes - self.line_start) > self.buffer_size / 2 {
-                // println!("doubling buffer from {} to {}", self.buffer_size, self.buffer_size * 2);
                 self.grow_buf();
             }
             self.compact();

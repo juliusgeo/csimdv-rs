@@ -127,7 +127,7 @@ impl<T: Read> Parser<T> {
             last_offset += n - last_delimiter_offset;
             self.bufreader.consume(n);
         }
-        return None
+        None
     }
     pub fn read_line(&mut self) -> Option<Record<'_>> {
         return self.process_buffer_chunks();

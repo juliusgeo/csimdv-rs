@@ -142,17 +142,20 @@ mod tests {
             let mut reader = ZeroCopyReader::from_reader(file2);
             p.read_line(); // skip header
             let mut counter = 0;
-            while let Some(ours) = p.read_line() {
-                if let Some(theirs) = reader.read_byte_record().unwrap() {
+            while let Some(theirs) = reader.read_byte_record().unwrap() {
+                if let Some(ours) = p.read_line() {
                     counter += 1;
                     for i in 0..ours.len() {
                         let o = &ours[i];
                         let theirs = str::from_utf8(&theirs[i]).unwrap();
-                        assert_eq!(*o, *theirs);
+                        if *o != *theirs {
+                            dbg!(counter, theirs, &ours);
+                        }
+                        assert_eq!(*o, *theirs, "Mismatch at record {}, field {}", counter, i);
                     }
-                    assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}", counter);
+                    assert_eq!(ours.len(), theirs.len(), "Mismatch in number of fields at record {}, {} vs {}", counter, ours.len(), theirs.len());
                 } else {
-                    panic!("Mismatch in number of records");
+                    panic!("Mismatch in number of records ours, at line {}, file {}", counter, path);
                 }
             }
         }
