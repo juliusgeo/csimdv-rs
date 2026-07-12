@@ -79,10 +79,7 @@ impl<'a> Iterator for RecordIterator<'a> {
             return None
         }
         let index = self.current_field;
-        let (start, mut end) = (self.record.offsets[index], self.record.offsets[index + 1]);
-        if index < self.record.len() - 1 {
-            end -= 1;
-        }
+        let (start, end) = (self.record.offsets[index], self.record.offsets[index + 1]);
         self.current_field += 1;
         Some(&self.record.data[start..end])
     }
