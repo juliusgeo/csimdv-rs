@@ -44,9 +44,6 @@ impl Dialect {
     }
 }
 
-thread_local! {
-    static CLASSIFIER: Classifier = Classifier::new();
-}
 pub struct Parser<T: Read> {
     pub dialect: Dialect,
     pub inside_quotes: bool,
@@ -88,7 +85,7 @@ impl<T: Read> Parser<T> {
 
     fn process_buffer_chunks(&mut self) -> Option<Record<'_>> {
         self.reset_line_state();
-        let mut last_offset = 0;
+        let mut off = 0;
         loop {
             // get the next chunk from the buffer, with n<=64 valid bytes
             let (chunk, n) = self.bufreader.get_chunk();
@@ -99,10 +96,6 @@ impl<T: Read> Parser<T> {
             let (delimiter_locations, quote_locations, newline_locations) = self.classifier.classify(chunk);
             let (mut delimiter_offsets,  newline_offsets, quote_count) = Self::chunk_delimiter_offsets(quote_locations, newline_locations, delimiter_locations, self.inside_quotes);
             let first_newline = newline_offsets.trailing_zeros() as usize;
-            if quote_count % 2 != 0 {
-                self.inside_quotes = !self.inside_quotes;
-            }
-            let mut last_delimiter_offset: usize = 0;
             // iterate over the offsets
             while delimiter_offsets != 0 {
                 let pos = delimiter_offsets.trailing_zeros() as usize;
@@ -111,20 +104,20 @@ impl<T: Read> Parser<T> {
                 }
                 delimiter_offsets &= delimiter_offsets - 1;
                 // +1 to include the comma, otherwise the offsets become misaligned
-                last_offset += pos - last_delimiter_offset + 1;
-                self.delimiters.push(last_offset);
-                last_delimiter_offset = pos+1;
+                self.delimiters.push(pos + off + 1);
             }
             if first_newline != CHUNK_SIZE && first_newline <= n {
-                last_offset += first_newline - last_delimiter_offset;
-                self.delimiters.push(last_offset);
+                self.delimiters.push(first_newline + off);
                 self.bufreader.consume(first_newline);
                 return Some(Record::new(
                     self.bufreader.get_line_slice(),
                     self.delimiters.as_slice(),
                 ));
             }
-            last_offset += n - last_delimiter_offset;
+            if quote_count % 2 != 0 {
+                self.inside_quotes = !self.inside_quotes;
+            }
+            off += n;
             self.bufreader.consume(n);
         }
         None

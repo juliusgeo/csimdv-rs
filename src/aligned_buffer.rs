@@ -71,9 +71,7 @@ impl<T: Read> AlignedBuffer<T> {
             self.buffer.set_len(self.buffer_size);
         }
         let res = self.reader.read(
-            unsafe {
                 self.buffer.as_mut_slice()
-            }
         );
         match res {
             Ok(r) => {
