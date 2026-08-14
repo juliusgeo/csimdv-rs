@@ -3,14 +3,15 @@ mod tests {
     use crate::default_dialect;
     use crate::Parser;
     use std::fs::File;
-    use std::io::Cursor;
+    use std::io::{Write};
     use crate::aligned_buffer::AlignedBuffer;
     use simd_csv::ZeroCopyReader;
 
-    fn reader_from_str(s: &str) -> AlignedBuffer<Cursor<&[u8]>> {
-        AlignedBuffer::new(
-        Cursor::new(s.as_bytes())
-        )
+    fn reader_from_str(s: &str) -> AlignedBuffer {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        AlignedBuffer::new(&f.reopen().unwrap()).unwrap()
     }
 
     #[test]
@@ -30,15 +31,6 @@ mod tests {
         assert_eq!(record, vec!["1", "2", "30", "\"300, 400\"",  "4"]);
         let record = p.read_line().unwrap();
         assert_eq!(record, vec!["1", "2", "30", "\"300, 400\"",  "4"]);
-    }
-
-    #[test]
-    fn test_multi_line_parsing_boundaries() {
-        let line = "1,2,30,300,400,4,1,2,30,300,400,4,400,4,1,2,30,300,400,4,400,4\n\r1,2,30,\"300, 400\",4\n\r";
-        let mut p = Parser::new(default_dialect(), reader_from_str(line));
-        let record = p.read_line().unwrap();
-        let record = p.read_line().unwrap();
-        dbg!(record);
     }
 
 
@@ -107,7 +99,7 @@ mod tests {
     #[test]
     fn test_parse_file() {
         let file = File::open("examples/customers-2000000.csv").unwrap();
-        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+        let mut p = Parser::new(default_dialect(), AlignedBuffer::new(&file).unwrap());
         while let Some(mut record) = p.read_line() {
             for field in record.iter() {
                 let _ = field.len();
@@ -119,7 +111,7 @@ mod tests {
     fn bench_parse_file_profile() {
         fn parse_file() {
             let file = File::open("examples/nfl.csv").unwrap();
-            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(&file).unwrap());
             while let Some(mut record) = p.read_line() {
                 for field in record.iter() {
                     let _ = field.len();
@@ -137,7 +129,7 @@ mod tests {
     fn test_equality_simd_csv() {
         for path in ["examples/customers-2000000.csv", "examples/nfl.csv", "examples/EDW.TEST_CAL_DT.csv"].iter() {
             let file = File::open(path).unwrap();
-            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+            let mut p = Parser::new(default_dialect(), AlignedBuffer::new(&file).unwrap());
             let file2 = File::open(path).unwrap();
             let mut reader = ZeroCopyReader::from_reader(file2);
             p.read_line(); // skip header

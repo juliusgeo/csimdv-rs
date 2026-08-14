@@ -1,119 +1,39 @@
-use std::cmp::min;
-use std::io::Read;
-use crate::constants::{MIN_BUFFER_SIZE, CHUNK_SIZE};
+use memmap2::Mmap;
+use crate::constants::CHUNK_SIZE;
 
-#[repr(C, align(64))]
-pub struct AlignedBuffer<T: Read> {
-    buffer: Vec<u8>,
+pub struct AlignedBuffer {
+    mmap: Mmap,
     start: usize,
-    valid_bytes: usize,
-    reader: T,
     line_start: usize,
-    buffer_size: usize,
 }
 
-impl<T: Read> AlignedBuffer<T> {
-
-    pub fn with_capacity(reader: T, capacity: usize) -> Self {
-        let mut new_buffer = AlignedBuffer {
-            buffer: Vec::with_capacity(capacity),
+impl AlignedBuffer {
+    pub fn new(file: &std::fs::File) -> std::io::Result<Self> {
+        let mmap = unsafe { Mmap::map(file)? };
+        mmap.advise(memmap2::Advice::Sequential)?;
+        Ok(AlignedBuffer {
+            mmap,
             start: 0,
-            valid_bytes: 0,
-            reader,
             line_start: 0,
-            buffer_size: capacity,
-        };
-        new_buffer.fill_buf_initial();
-        return new_buffer;
-    }
-    pub fn new(reader: T) -> Self {
-        return AlignedBuffer::with_capacity(reader, MIN_BUFFER_SIZE);
-    }
-
-    pub fn grow_buf(&mut self) {
-        self.buffer.reserve_exact(self.buffer_size);
-        self.buffer_size *= 2;
-        unsafe {
-            self.buffer.set_len(self.buffer_size);
-        }
-    }
-
-    pub fn compact(&mut self) {
-        // compaction step--move the remaining bytes to the front of the buffer and read into the rest.
-        // unsafe so we don't lose all our speed from bounds checks
-        let remaining = self.valid_bytes - self.line_start;
-        unsafe {
-            std::ptr::copy(
-                self.buffer.as_ptr().add(self.line_start),
-                self.buffer.as_mut_ptr(),
-                remaining,
-            );
-        }
-        let res = self.reader.read(
-            unsafe {
-                self.buffer.get_unchecked_mut(remaining..)
-            }
-        );
-        match res {
-            Ok(r) => {
-                self.valid_bytes = remaining + r
-            }
-            Err(r) => {
-                panic!("Error reading from input: {:?}", r);
-            }
-        }
-        self.start = self.start - self.line_start;
-        self.line_start = 0;
-    }
-
-    pub fn fill_buf_initial(&mut self) {
-        unsafe {
-            self.buffer.set_len(self.buffer_size);
-        }
-        let res = self.reader.read(
-                self.buffer.as_mut_slice()
-        );
-        match res {
-            Ok(r) => {
-                self.valid_bytes = r;
-            }
-            Err(r) => {
-                panic!("Error reading from input: {:?}", r);
-            }
-        }
+        })
     }
 
     pub fn get_chunk(&mut self) -> (&[u8], usize) {
-        unsafe {
-            std::hint::assert_unchecked(self.buffer.len() % 64 == 0);
-        }
-        // the amount of valid bytes before we need to start moving buffer
-        let remaining = self.valid_bytes - self.start;
-        // add 2 so that we have room for a newline and carriage return, which may be consumed by get_line_slice
-        // even if the line is exactly at the end of the buffer.
-        if remaining < CHUNK_SIZE + 2 {
-            // this means that the current line is nearing the size of the buffer, which means we need
-            // to grow the max buffer size by doubling the size of the buffer.
-            if (self.valid_bytes - self.line_start) > self.buffer_size / 2 {
-                self.grow_buf();
-            }
-            self.compact();
-        }
-        return (unsafe { self.buffer.get_unchecked(self.start..self.start + CHUNK_SIZE) }, min(self.valid_bytes - self.start, CHUNK_SIZE));
+        let n = CHUNK_SIZE.min(self.mmap.len() - self.start);
+        return (&self.mmap[self.start..self.start + n], n);
     }
 
     pub fn start_line(&mut self) {
         self.line_start = self.start;
     }
 
-
     pub fn get_line_slice(&mut self) -> &[u8] {
-        let ret = unsafe { self.buffer.get_unchecked(self.line_start..self.start) };
-        if self.buffer[self.start] == b'\r' {
+        let ret = &self.mmap[self.line_start..self.start];
+        if self.mmap[self.start] == b'\r' {
             self.start += 1;
-        };
+        }
         self.start += 1;
-        return ret;
+        ret
     }
 
     pub fn consume(&mut self, amt: usize) {
@@ -124,16 +44,18 @@ impl<T: Read> AlignedBuffer<T> {
 #[cfg(test)]
 mod buftests {
     use crate::aligned_buffer::AlignedBuffer;
-    use std::io::{Cursor};
-    fn cursor_from_str(s: &str) -> Cursor<&[u8]> {
-        Cursor::new(s.as_bytes())
+    use std::io::{Write};
+    fn reader_from_str(s: &str) -> AlignedBuffer {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(s.as_bytes()).unwrap();
+        f.flush().unwrap();
+        AlignedBuffer::new(&f.reopen().unwrap()).unwrap()
     }
 
     #[test]
     fn test_bufread() {
         let line = "1,2,30,\"300, 400\",4\n";
-        let reader = cursor_from_str(line);
-        let mut buf = AlignedBuffer::new(reader);
+        let mut buf = reader_from_str(line);
         let (chunk, valid_bytes) = buf.get_chunk();
         assert_eq!(&chunk[0..5], b"1,2,3");
         assert_eq!(valid_bytes, 20);

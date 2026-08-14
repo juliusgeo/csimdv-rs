@@ -7,7 +7,6 @@ mod constants;
 mod record;
 
 use crate::record::Record;
-use std::io::Read;
 use std::ops::Index;
 use crate::aligned_buffer::AlignedBuffer;
 use crate::constants::{CHUNK_SIZE};
@@ -44,15 +43,15 @@ impl Dialect {
     }
 }
 
-pub struct Parser<T: Read> {
+pub struct Parser {
     pub dialect: Dialect,
     pub inside_quotes: bool,
-    pub bufreader: AlignedBuffer<T>,
+    pub bufreader: AlignedBuffer,
     delimiters: Vec<usize>,
     classifier: Classifier,
 }
-impl<T: Read> Parser<T> {
-    pub fn new(dialect: Dialect, bufreader: AlignedBuffer<T>) -> Self {
+impl Parser {
+    pub fn new(dialect: Dialect, bufreader: AlignedBuffer) -> Self {
         return Parser {
             dialect: dialect,
             inside_quotes: false,

@@ -19,7 +19,7 @@ fn parse_file_simd_csv_zerocopy(path: &str){
 }
 fn parse_file_csimdv(path: &str){
     let file = File::open(path).unwrap();
-    let mut p = Parser::new(default_dialect(), AlignedBuffer::new(file));
+    let mut p = Parser::new(default_dialect(), AlignedBuffer::new(&file).unwrap());
     while let Some(mut record) = p.read_line() {
         for field in record.iter() {
             let _ = field.len();

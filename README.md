@@ -34,6 +34,7 @@ and the return character, and the comparisons are quite slow. On x86, just direc
 characters of interests is faster. I initially implemented this using `portable_simd`, but it results in suboptimal code generation,
 especially on aarch64, where there is no equivalent to the `movemask` x86 instruction. I worked around that aspect by loading 
 the data interleaved into NEON vectors, allowing the usage of some more efficient bitmask generation techniques.
+The `memmap2` crate is used to memory map the input file, which along with `MADVISE_SEQUENTIAL` allows very fast I/O. 
 
 The following benchmark results were all calculated using `criterion-rs` with a `flat` sampling mode with a sampling time of 100s.
 
@@ -41,9 +42,9 @@ The following benchmark results were all calculated using `criterion-rs` with a 
 
 | File                                                  | `csimdv`     | `simd-csv`   | % Change |
 |-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.0234 GiB/s | 2.1657 GiB/s | -6.5     |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.4118 GiB/s | 1.8498 GiB/s | 30.4     |
-| customers-2000000.csv (not committable, too large)    | 2.4165 GiB/s | 1.7753 GiB/s | 36.1     |
+| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.6584 GiB/s | 2.277 GiB/s  | 16.7     |
+| [nfl.csv](examples%2Fnfl.csv)                         | 2.6332 GiB/s | 1.870 GiB/s  | 40.7     |
+| customers-2000000.csv (not committable, too large)    | 2.5148 GiB/s | 1.8295 GiB/s | 37.4     |
 
 Ran on an Apple M1 Max with 64GB of RAM.
 

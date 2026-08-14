@@ -11,7 +11,11 @@ harness = false
 [dev-dependencies]
 criterion = "0.8.2"
 simd-csv = "0.10.3"
+tempfile = "3.3.0"
 
+[dependencies]
+memmap2 = "0.9.11"
+libc = "0.2.185"
 
 [profile.release]
 opt-level = 3
