@@ -93,8 +93,6 @@ pub(crate) mod simd {
 
         #[inline(always)]
         pub fn classify(&self, chunk: &[u8]) -> (u64, u64, u64) {
-            debug_assert!(chunk.len() >= 64);
-
             unsafe {
                 fn lane_eq_bitmask(a: (__m256i, __m256i), b: (__m256i, __m256i)) -> u64 {
                     unsafe {

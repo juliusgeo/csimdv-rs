@@ -10,6 +10,7 @@ pub struct AlignedBuffer {
 impl AlignedBuffer {
     pub fn new(file: &std::fs::File) -> std::io::Result<Self> {
         let mmap = unsafe { Mmap::map(file)? };
+        #[cfg(not(target_os = "windows"))]
         mmap.advise(memmap2::Advice::Sequential)?;
         Ok(AlignedBuffer {
             mmap,
