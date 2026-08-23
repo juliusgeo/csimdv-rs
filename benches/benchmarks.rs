@@ -1,31 +1,10 @@
-use simd_csv::ZeroCopyReader;
-use csimdv::default_dialect;
-use csimdv::Parser;
-use std::fs::File;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
-use csimdv::aligned_buffer::AlignedBuffer;
 use std::fs;
 use std::time::Duration;
+mod common;
 
-fn parse_file_simd_csv_zerocopy(path: &str){
-    let file = File::open(path).unwrap();
+use common::{parse_file_csv, parse_file_simd_csv_zerocopy, parse_file_csimdv};
 
-    let mut reader = ZeroCopyReader::from_reader(file);
-    while let Some(record) = reader.read_byte_record().unwrap() {
-        for field in record.iter() {
-            let _ = field.len();
-        }
-    }
-}
-fn parse_file_csimdv(path: &str){
-    let file = File::open(path).unwrap();
-    let mut p = Parser::new(default_dialect(), AlignedBuffer::new(&file).unwrap());
-    while let Some(mut record) = p.read_line() {
-        for field in record.iter() {
-            let _ = field.len();
-        }
-    }
-}
 fn collect_paths(basepath: &str) -> Vec<String> {
     let paths = fs::read_dir(basepath)
         .unwrap()
@@ -41,8 +20,9 @@ fn comparison_benchmark(c: &mut Criterion) {
     for path in paths.iter() {
         let metadata = fs::metadata(path).unwrap();
         group.throughput(criterion::Throughput::Bytes(metadata.len()));
-        group.bench_with_input(BenchmarkId::new("parse_file_simd_csv_zerocopy", path), path,|c, p| c.iter(|| parse_file_simd_csv_zerocopy(p)));
-        group.bench_with_input(BenchmarkId::new("parse_file_csimdv", path), path, |c, p| c.iter(|| parse_file_csimdv(p)));
+        group.bench_with_input(BenchmarkId::new("csv", path), path, |c, p| c.iter(|| parse_file_csv(p)));
+        group.bench_with_input(BenchmarkId::new("simdcsv", path), path,|c, p| c.iter(|| parse_file_simd_csv_zerocopy(p)));
+        group.bench_with_input(BenchmarkId::new("csimdv", path), path, |c, p| c.iter(|| parse_file_csimdv(p)));
     }
     group.finish();
 }
