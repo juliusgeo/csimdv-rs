@@ -113,23 +113,21 @@ pub(crate) mod simd {
 pub(crate) mod simd {
     use core::arch::aarch64::*;
 
-    pub const COMMA: u8 = 2;
-    pub const NEWLINE: u8 = 4;
-    pub const QUOTES: u8 = 8;
+    pub const COMMA: u8 = 0x2C;
+    pub const NEWLINE: u8 = 0xFF;
+    pub const QUOTES: u8 = 0x22;
 
-    pub const BYTE_TABLE: [u8; 64] = {
-        let mut out = [0u8; 64];
+    pub const BYTE_TABLE: [u8; 16] = {
+        let mut out = [0u8; 16];
         out[0x0A] = NEWLINE;
         out[0x0D] = NEWLINE;
-        out[0x2C] = COMMA;
-        out[0x22] = QUOTES;
         out
     };
 
     pub struct Classifier {
         bit_select_mask_1: uint8x16_t,
         bit_select_mask_2: uint8x16_t,
-        byte_table: uint8x16x4_t,
+        byte_table: uint8x16_t,
         comma_splat: uint8x16_t,
         newline_splat: uint8x16_t,
         quote_splat: uint8x16_t,
@@ -137,7 +135,7 @@ pub(crate) mod simd {
     impl Classifier {
         pub fn new() -> Self {
             Self {
-                byte_table: unsafe { vld1q_u8_x4(&BYTE_TABLE as *const u8) },
+                byte_table: unsafe { vld1q_u8(&BYTE_TABLE as *const u8) },
                 bit_select_mask_1: unsafe { vdupq_n_u8(0x55) },
                 bit_select_mask_2: unsafe { vdupq_n_u8(0x33) },
                 comma_splat: unsafe { vdupq_n_u8(COMMA) },
@@ -152,15 +150,17 @@ pub(crate) mod simd {
                 // load the chunk interleaved (this makes the movemask emulation easier at the end).
                 let chunk = vld4q_u8(chunk.as_ptr());
                 // 4 instrs
+                // we need to classify bytes up till 0x2C (44), each table lookup register can accommodate
+                // 16 bytes, so 3 * 16 = 48, we only need 3 table registers.
                 // according to this table: https://dougallj.github.io/applecpu/firestorm-simd.html,
-                // vqtbl4q is only twice the the latency of a single register vqtbl (4 vs 2), but it
-                // halves the number of table lookups we need to do (for high and low nibbles), and removes
-                // the need to and them. So in all, it should save us about 4 instructions.
+                // vqtbl3q has a throughput of .5 vs .25 for vqtbl1q, but it halves the number of table lookups
+                // we need to do (for high and low nibbles), and removes the need to and them. So in all,
+                // it should save us about 4 instructions.
                 let classified = uint8x16x4_t(
-                    vqtbl4q_u8(self.byte_table, chunk.0),
-                    vqtbl4q_u8(self.byte_table, chunk.1),
-                    vqtbl4q_u8(self.byte_table, chunk.2),
-                    vqtbl4q_u8(self.byte_table, chunk.3),
+                    vqtbx1q_u8(chunk.0, self.byte_table, chunk.0),
+                    vqtbx1q_u8(chunk.1, self.byte_table, chunk.1),
+                    vqtbx1q_u8(chunk.2, self.byte_table, chunk.2),
+                    vqtbx1q_u8(chunk.3, self.byte_table, chunk.3),
                 );
 
                 let to_bitmask = |input: uint8x16x4_t, s: uint8x16_t| -> u64 {
