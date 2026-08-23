@@ -113,34 +113,29 @@ pub(crate) mod simd {
 pub(crate) mod simd {
     use core::arch::aarch64::*;
 
-    pub const COMMA: u8 = 0x2C;
-    pub const NEWLINE: u8 = 0xFF;
-    pub const QUOTES: u8 = 0x22;
+    pub const COMMA: u8 = ',' as u8;
+    pub const NEWLINE: u8 = '\n' as u8;
+    pub const QUOTES: u8 = '"' as u8;
 
-    pub const BYTE_TABLE: [u8; 16] = {
-        let mut out = [0u8; 16];
-        out[0x0A] = NEWLINE;
-        out[0x0D] = NEWLINE;
-        out
-    };
+    pub const RETURN: u8 = '\r' as u8;
 
     pub struct Classifier {
         bit_select_mask_1: uint8x16_t,
         bit_select_mask_2: uint8x16_t,
-        byte_table: uint8x16_t,
         comma_splat: uint8x16_t,
         newline_splat: uint8x16_t,
         quote_splat: uint8x16_t,
+        return_splat: uint8x16_t,
     }
     impl Classifier {
         pub fn new() -> Self {
             Self {
-                byte_table: unsafe { vld1q_u8(&BYTE_TABLE as *const u8) },
                 bit_select_mask_1: unsafe { vdupq_n_u8(0x55) },
                 bit_select_mask_2: unsafe { vdupq_n_u8(0x33) },
                 comma_splat: unsafe { vdupq_n_u8(COMMA) },
                 newline_splat: unsafe { vdupq_n_u8(NEWLINE) },
                 quote_splat: unsafe { vdupq_n_u8(QUOTES) },
+                return_splat: unsafe { vdupq_n_u8(RETURN)}
             }
         }
 
@@ -149,31 +144,37 @@ pub(crate) mod simd {
             unsafe {
                 // load the chunk interleaved (this makes the movemask emulation easier at the end).
                 let chunk = vld4q_u8(chunk.as_ptr());
-                // 4 instrs
-                // we need to classify bytes up till 0x2C (44), each table lookup register can accommodate
-                // 16 bytes, so 3 * 16 = 48, we only need 3 table registers.
-                // according to this table: https://dougallj.github.io/applecpu/firestorm-simd.html,
-                // vqtbl3q has a throughput of .5 vs .25 for vqtbl1q, but it halves the number of table lookups
-                // we need to do (for high and low nibbles), and removes the need to and them. So in all,
-                // it should save us about 4 instructions.
-                let classified = uint8x16x4_t(
-                    vqtbx1q_u8(chunk.0, self.byte_table, chunk.0),
-                    vqtbx1q_u8(chunk.1, self.byte_table, chunk.1),
-                    vqtbx1q_u8(chunk.2, self.byte_table, chunk.2),
-                    vqtbx1q_u8(chunk.3, self.byte_table, chunk.3),
-                );
-
-                let to_bitmask = |input: uint8x16x4_t, s: uint8x16_t| -> u64 {
+                let to_bitmask = |input: uint8x16x4_t| -> u64 {
                     // isolate 01010101 and 23232323
-                    let t0 = vbslq_u8(self.bit_select_mask_1, vceqq_u8(input.0, s), vceqq_u8(input.1, s)); // 01010101...
-                    let t1 = vbslq_u8(self.bit_select_mask_1, vceqq_u8(input.2, s), vceqq_u8(input.3, s)); // 23232323...
+                    let t0 = vbslq_u8(self.bit_select_mask_1, input.0, input.1); // 01010101...
+                    let t1 = vbslq_u8(self.bit_select_mask_1, input.2, input.3); // 23232323...
                     let combined = vbslq_u8(self.bit_select_mask_2, t0, t1); // 01230123...
                     let sum = vshrn_n_s16::<4>(vreinterpretq_s16_u8(combined));
                     return vget_lane_u64::<0>(vreinterpret_u64_s8(sum));
                 };
-                (to_bitmask(classified, self.comma_splat),
-                        to_bitmask(classified, self.quote_splat),
-                        to_bitmask(classified, self.newline_splat))
+                let comma_equal = uint8x16x4_t(
+                    vceqq_u8(chunk.0, self.comma_splat),
+                    vceqq_u8(chunk.1, self.comma_splat),
+                    vceqq_u8(chunk.2, self.comma_splat),
+                    vceqq_u8(chunk.3, self.comma_splat),
+                );
+                let quote_equal = uint8x16x4_t(
+                    vceqq_u8(chunk.0, self.quote_splat),
+                    vceqq_u8(chunk.1, self.quote_splat),
+                    vceqq_u8(chunk.2, self.quote_splat),
+                    vceqq_u8(chunk.3, self.quote_splat),
+                );
+                let newline_equal = uint8x16x4_t(
+                    vorrq_u8(vceqq_u8(chunk.0, self.newline_splat), vceqq_u8(chunk.0, self.return_splat)),
+                    vorrq_u8(vceqq_u8(chunk.1, self.newline_splat), vceqq_u8(chunk.1, self.return_splat)),
+                    vorrq_u8(vceqq_u8(chunk.2, self.newline_splat), vceqq_u8(chunk.2, self.return_splat)),
+                    vorrq_u8(vceqq_u8(chunk.3, self.newline_splat), vceqq_u8(chunk.3, self.return_splat)),
+                );
+                (
+                    to_bitmask(comma_equal),
+                    to_bitmask(quote_equal),
+                    to_bitmask(newline_equal)
+                )
             }
         }
     }
