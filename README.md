@@ -40,11 +40,11 @@ The following benchmark results were all calculated using `criterion-rs` with a 
 
 ### `aarch64 NEON` 
 
-| Library  | nfl.csv      | customers-2000000.csv | EDW.TEST_CAL_DT.csv |
-|----------|--------------|-----------------------|---------------------|
-| csv      | 642.94 MiB/s | 596.36 MiB/s          | 808.70 MiB/s        |
-| simd-csv | 1.89 GiB/s   | 1.83 GiB/s            | 2.29 GiB/s          |
-| csimdv   | 2.67 GiB/s   | 2.55 GiB/s            | 2.66 GiB/s          |
+| Library | nfl.csv      | customers-2000000.csv | EDW.TEST_CAL_DT.csv |
+|---------|--------------|-----------------------|---------------------|
+| csv     | 653.53 MiB/s | 587.96 MiB/s          | 799.38 MiB/s        |
+| simdcsv | 1.90 GiB/s   | 1.83 GiB/s            | 2.28 GiB/s          |
+| csimdv  | 2.80 GiB/s   | 2.63 GiB/s            | 2.72 GiB/s          |
 
 Ran on an Apple M1 Max with 64GB of RAM.
 
