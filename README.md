@@ -50,18 +50,20 @@ Ran on an Apple M1 Max with 64GB of RAM.
 
 ### `x86_64 AVX-512`
 
-| File                                                  | `csimdv`     | `simd-csv`   | % Change |
-|-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.3937 GiB/s | 1.9772 GiB/s | 21.1     |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.7292 GiB/s | 1.9381 GiB/s | 40.8     |
-| customers-2000000.csv (not committable, too large)    | 2.3282 GiB/s | 1.6176 GiB/s | 43.9     |
+| Library | customers-2000000.csv | EDW.TEST_CAL_DT.csv | nfl.csv      |
+|---------|-----------------------|---------------------|--------------|
+| csv     | 599.41 MiB/s          | 827.44 MiB/s        | 643.78 MiB/s |
+| simdcsv | 1.69 GiB/s            | 2.03 GiB/s          | 2.04 GiB/s   |
+| csimdv  | 2.32 GiB/s            | 2.46 GiB/s          | 2.73 GiB/s   |
+
 
 ### `x86_64 AVX-2`
 
-| File                                                  | `csimdv`     | `simd-csv`   | % Change |
-|-------------------------------------------------------|--------------|--------------|----------|
-| [EDW.TEST_CAL_DT.csv](examples%2FEDW.TEST_CAL_DT.csv) | 2.3458 GiB/s | 1.9544 GiB/s | 20.0     |
-| [nfl.csv](examples%2Fnfl.csv)                         | 2.5862 GiB/s | 1.9858 GiB/s | 37.7     |
-| customers-2000000.csv (not committable, too large)    | 2.1913 GiB/s | 1.5915 GiB/s | 30.23    |
+| Library | customers-2000000.csv | EDW.TEST_CAL_DT.csv  | nfl.csv      |
+|---------|-----------------------|----------------------|--------------|
+| csv     | 591.84 MiB/s          | 786.63 MiB/s         | 613.77 MiB/s |
+| simdcsv | 1.70 GiB/s            | 2.10 GiB/s           | 2.07 GiB/s   |
+| csimdv  | 2.32 GiB/s            | 2.44 GiB/s           | 2.60 GiB/s   |
+
 
 Ran on an AMD Ryzen 7 9800x3d with 32GB of RAM, with `RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f"` for AVX2.

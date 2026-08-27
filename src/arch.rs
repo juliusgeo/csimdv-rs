@@ -50,9 +50,9 @@ pub(crate) mod simd {
         pub fn classify(&self, chunk: &[u8]) -> (u64, u64, u64) {
             unsafe {
                 let chunk = _mm512_loadu_si512(chunk.as_ptr() as *const __m512i);
-                (_mm512_cmpeq_epi8_mask(chunk, self.comma_splat),
-                 _mm512_cmpeq_epi8_mask(chunk, self.quote_splat),
-                 _mm512_cmpeq_epi8_mask(chunk, self.newline_splat) | _mm512_cmpeq_epi8_mask(chunk, self.return_splat))
+                (_mm512_cmpeq_epu8_mask(chunk, self.comma_splat),
+                 _mm512_cmpeq_epu8_mask(chunk, self.quote_splat),
+                 _mm512_cmpeq_epu8_mask(chunk, self.newline_splat) | _mm512_cmpeq_epu8_mask(chunk, self.return_splat))
             }
         }
     }
