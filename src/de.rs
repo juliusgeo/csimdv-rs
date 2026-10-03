@@ -145,7 +145,13 @@ impl<'a, 'de: 'a> Deserializer<'de> for &'a mut RecordDeserializer<'de> {
     type Error = DeError;
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeError> {
-        self.deserialize_str(visitor)
+        // Values captured by #[serde(flatten)] arrive here, so unescape like deserialize_string.
+        self.deserialize_string(visitor)
+    }
+
+    fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeError> {
+        // serde_derive calls this instead of deserialize_struct when a struct has a flatten field.
+        if self.has_headers() { visitor.visit_map(self) } else { Err(DeError::Unsupported("deserialize_map without headers")) }
     }
     fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeError> {
         let field = self.next_field()?;
@@ -262,10 +268,6 @@ impl<'a, 'de: 'a> Deserializer<'de> for &'a mut RecordDeserializer<'de> {
         deserialize_unit,
         deserialize_unit_struct(_name: &'static str),
         deserialize_enum(_name: &'static str, _variants: &'static [&'static str]),
-        // A row deserializes to a struct, so no target is ever a map. This is
-        // only the map *entry point*: `deserialize_struct` still drives the
-        // `MapAccess` impl below to match struct fields to headers.
-        deserialize_map,
         // Fields are UTF-8: `Record` validates on access, so a field can
         // always be handed over as `&str` and never needs a byte path.
         deserialize_bytes,
@@ -507,6 +509,24 @@ mod tests {
         let record = p.read_line().unwrap();
         let err = deserialize_record::<Row>(&record, Some(&headers), None).unwrap_err();
         assert!(matches!(err, DeError::Message(_)), "got {:?}", err);
+    }
+
+    #[test]
+    fn test_flatten_collects_extra_columns() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Flat {
+            id: u32,
+            #[serde(flatten)]
+            rest: std::collections::HashMap<String, String>,
+        }
+        let data = "id,extRarity,extText\n1,Rare,\"a, \"\"b\"\"\"\n";
+        let mut p = Parser::new(default_dialect(), reader_from_str(data));
+        let headers = Headers::from_record(&p.read_line().unwrap());
+        let record = p.read_line().unwrap();
+        let row: Flat = deserialize_record(&record, Some(&headers), Some(default_dialect())).unwrap();
+        assert_eq!(row.id, 1);
+        assert_eq!(row.rest["extRarity"], "Rare");
+        assert_eq!(row.rest["extText"], "a, \"b\"");
     }
 
     // ---- ints and floats ----

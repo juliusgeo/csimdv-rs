@@ -86,7 +86,12 @@ impl Parser {
             // get the next chunk from the buffer, with n<=64 valid bytes
             let (chunk, n) = self.bufreader.get_chunk();
             if n == 0 {
-                break
+                if off == 0 {
+                    return None; // clean EOF
+                }
+                // EOF without a trailing newline: everything since the line start is the last record.
+                self.delimiters.push(off);
+                return Some(Record::new(self.bufreader.get_tail_slice(), self.delimiters.as_slice()));
             }
             // find delimiters, quotes, newlines
             let (delimiter_locations, quote_locations, newline_locations) = self.classifier.classify(chunk);
