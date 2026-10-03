@@ -112,30 +112,32 @@ pub(crate) mod simd {
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub(crate) mod simd {
     use core::arch::aarch64::*;
+    use crate::Dialect;
 
-    pub const COMMA: u8 = ',' as u8;
     pub const NEWLINE: u8 = '\n' as u8;
-    pub const QUOTES: u8 = '"' as u8;
-
     pub const RETURN: u8 = '\r' as u8;
 
     pub struct Classifier {
         bit_select_mask_1: uint8x16_t,
         bit_select_mask_2: uint8x16_t,
         comma_splat: uint8x16_t,
-        newline_splat: uint8x16_t,
         quote_splat: uint8x16_t,
-        return_splat: uint8x16_t,
+        newline_table: uint8x16_t,
     }
     impl Classifier {
-        pub fn new() -> Self {
+        pub fn new(dialect: Dialect) -> Self {
+            // 0xff at '\n' and '\r'. Both are below 16, so `vqtbl1q_u8` can use
+            // each input byte as its own index: every other byte either hits a
+            // zero entry or is out of range, which also gives zero.
+            let mut newline_table = [0u8; 16];
+            newline_table[NEWLINE as usize] = 0xff;
+            newline_table[RETURN as usize] = 0xff;
             Self {
                 bit_select_mask_1: unsafe { vdupq_n_u8(0x55) },
                 bit_select_mask_2: unsafe { vdupq_n_u8(0x33) },
-                comma_splat: unsafe { vdupq_n_u8(COMMA) },
-                newline_splat: unsafe { vdupq_n_u8(NEWLINE) },
-                quote_splat: unsafe { vdupq_n_u8(QUOTES) },
-                return_splat: unsafe { vdupq_n_u8(RETURN)}
+                comma_splat: unsafe { vdupq_n_u8(dialect.delimiter as u8) },
+                quote_splat: unsafe { vdupq_n_u8(dialect.quotechar as u8) },
+                newline_table: unsafe { vld1q_u8(newline_table.as_ptr()) },
             }
         }
 
@@ -164,11 +166,12 @@ pub(crate) mod simd {
                     vceqq_u8(chunk.2, self.quote_splat),
                     vceqq_u8(chunk.3, self.quote_splat),
                 );
+                // One table lookup per vector instead of two compares and an or.
                 let newline_equal = uint8x16x4_t(
-                    vorrq_u8(vceqq_u8(chunk.0, self.newline_splat), vceqq_u8(chunk.0, self.return_splat)),
-                    vorrq_u8(vceqq_u8(chunk.1, self.newline_splat), vceqq_u8(chunk.1, self.return_splat)),
-                    vorrq_u8(vceqq_u8(chunk.2, self.newline_splat), vceqq_u8(chunk.2, self.return_splat)),
-                    vorrq_u8(vceqq_u8(chunk.3, self.newline_splat), vceqq_u8(chunk.3, self.return_splat)),
+                    vqtbl1q_u8(self.newline_table, chunk.0),
+                    vqtbl1q_u8(self.newline_table, chunk.1),
+                    vqtbl1q_u8(self.newline_table, chunk.2),
+                    vqtbl1q_u8(self.newline_table, chunk.3),
                 );
                 (
                     to_bitmask(comma_equal),

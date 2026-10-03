@@ -8,14 +8,15 @@ path = "benches/benchmarks.rs"
 name = "benchmarks"
 harness = false
 
-[[bench]]
-path = "benches/synthetic.rs"
-name = "synthetic"
-harness = false
 
 [[bench]]
 path = "benches/movemask_emul.rs"
 name = "movemask"
+harness = false
+
+[[bench]]
+path = "benches/deserialize.rs"
+name = "deserialize"
 harness = false
 
 [dev-dependencies]
@@ -26,9 +27,10 @@ csv = "1.4.0"
 rand = "0.10.2"
 
 [dependencies]
-memmap2 = "0.9.11"
-libc = "0.2.185"
+libc = "0.2"
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+memchr = "2.8.3"
 
 [profile.release]
 opt-level = 3

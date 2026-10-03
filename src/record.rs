@@ -1,4 +1,4 @@
-use crate::Index;
+use std::ops::Index;
 use std::fmt;
 
 pub struct Record<'a> {
@@ -28,19 +28,19 @@ impl<'a> fmt::Debug for Record<'_> {
             if i != 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "\"{}\"", &self[i])?;
+            write!(f, "\"{}\"", str::from_utf8(&self[i]).unwrap())?;
         }
         Ok(())
     }
 }
 impl<'a> Index<usize> for Record<'a> {
-    type Output = str;
+    type Output = [u8];
     fn index(&self, index: usize) -> &Self::Output {
         let (start, mut end) = (self.offsets[index], self.offsets[index+1]);
         if index < self.len() - 1 {
             end -= 1;
         }
-        return str::from_utf8(&self.data[start..end]).unwrap();
+        &self.data[start..end]
     }
 }
 
@@ -50,7 +50,7 @@ impl<'a> PartialEq<Vec<&str>> for Record<'a> {
             return false
         }
         for i in 0..self.len() {
-            if &self[i] != other[i] {
+            if str::from_utf8(&self[i]).unwrap() != other[i] {
                 return false
             }
         }

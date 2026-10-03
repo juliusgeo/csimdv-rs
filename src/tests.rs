@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use crate::default_dialect;
+    use crate::{default_dialect, SerdeReader};
     use crate::Parser;
     use std::fs::File;
     use std::io::{Write};
+    use serde::Deserialize;
     use crate::aligned_buffer::AlignedBuffer;
     use simd_csv::ZeroCopyReader;
 
@@ -40,7 +41,7 @@ mod tests {
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
         dbg!(&record);
-        assert_eq!(&record[record.len() -2], "offscore blah blah")
+        assert_eq!(str::from_utf8(&record[record.len() -2]).unwrap(), "offscore blah blah")
     }
 
     #[test]
@@ -49,7 +50,7 @@ mod tests {
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
         dbg!(&record);
-        assert_eq!(&record[record.len() -2], "offscore blah blah")
+        assert_eq!(str::from_utf8(&record[record.len() -2]).unwrap(), "offscore blah blah")
     }
 
 
@@ -58,7 +59,7 @@ mod tests {
         let line = "20120905_DAL@NYG,1,,0,DAL,NYG,,,,D.Bailey kicks 69 yards from DAL 35 to NYG -4. D.Wilson to NYG 16 for 20 yards (A.Holmes).,0,0,2012\n";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
-        assert_eq!(record[record.len()-4], "D.Bailey kicks 69 yards from DAL 35 to NYG -4. D.Wilson to NYG 16 for 20 yards (A.Holmes).".to_string())
+        assert_eq!(str::from_utf8(&record[record.len() -4]).unwrap(), "D.Bailey kicks 69 yards from DAL 35 to NYG -4. D.Wilson to NYG 16 for 20 yards (A.Holmes).".to_string())
     }
 
     #[test]
@@ -66,7 +67,7 @@ mod tests {
         let line = "20120905_DAL@NYG,1,59,49,NYG,DAL,2,10,84,(14:49) E.Manning pass short middle to V.Cruz to NYG 21 for 5 yards (S.Lee) [J.Hatcher].,0,0,2012\n";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
-        assert_eq!(record[record.len()-4], "(14:49) E.Manning pass short middle to V.Cruz to NYG 21 for 5 yards (S.Lee) [J.Hatcher].".to_string())
+        assert_eq!(str::from_utf8(&record[record.len() -4]).unwrap(), "(14:49) E.Manning pass short middle to V.Cruz to NYG 21 for 5 yards (S.Lee) [J.Hatcher].".to_string())
     }
 
     #[test]
@@ -74,8 +75,8 @@ mod tests {
         let line = "20120905_DAL@NYG,1,57,9,NYG,DAL,1,10,87,(12:09) A.Bradshaw left tackle to NYG 15 for 2 yards (J.Hatcher J.Price-Brent).,0,0,2012\n";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
-        assert_eq!(&record[record.len()-4], "(12:09) A.Bradshaw left tackle to NYG 15 for 2 yards (J.Hatcher J.Price-Brent).");
-        assert_eq!(&record[record.len()-1], "2012");
+        assert_eq!(str::from_utf8(&record[record.len() -4]).unwrap(), "(12:09) A.Bradshaw left tackle to NYG 15 for 2 yards (J.Hatcher J.Price-Brent).");
+        assert_eq!(str::from_utf8(&record[record.len() -1]).unwrap(), "2012");
     }
 
     #[test]
@@ -83,8 +84,8 @@ mod tests {
         let line = "20120905_DAL@NYG,1,57,9,NYG,DAL,1,10,87,(12:09) A.Bradshaw left tackle to NYG 15 for 2 yards (J.Hatcher J.Price-Brent).,0,0,2012\n";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
-        assert_eq!(&record[record.len()-4], "(12:09) A.Bradshaw left tackle to NYG 15 for 2 yards (J.Hatcher J.Price-Brent).".to_string());
-        assert_eq!(&record[record.len()-1], "2012");
+        assert_eq!(str::from_utf8(&record[record.len() -4]).unwrap(), "(12:09) A.Bradshaw left tackle to NYG 15 for 2 yards (J.Hatcher J.Price-Brent).".to_string());
+        assert_eq!(str::from_utf8(&record[record.len() -1]).unwrap(), "2012");
     }
 
     #[test]
@@ -92,8 +93,58 @@ mod tests {
         let line = "20120923_TB@DAL,3,29,12,TB,DAL,3,8,78,\"(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"\"seam\"\" route; Carter closest defender.\",7,10,2012\n";
         let mut p = Parser::new(default_dialect(), reader_from_str(line));
         let record = p.read_line().unwrap();
-        assert_eq!(&record[record.len()-4], "\"(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"\"seam\"\" route; Carter closest defender.\"".to_string());
-        assert_eq!(&record[record.len()-1], "2012");
+        assert_eq!(str::from_utf8(&record[record.len() -4]).unwrap(), "\"(14:12) (Shotgun) J.Freeman pass incomplete deep left to D.Clark. Pass incomplete on a \"\"seam\"\" route; Carter closest defender.\"".to_string());
+        assert_eq!(str::from_utf8(&record[record.len() -1]).unwrap(), "2012");
+    }
+
+    /// A CSV whose bytes end at, or just short of, a page boundary.
+    ///
+    /// `classify` always loads a full `CHUNK_SIZE` block, so the load covering
+    /// the last line of such a file reaches past the end of the mapping.
+    /// Without the zero-padded tail chunk this faults rather than failing.
+    #[test]
+    fn test_parse_file_ending_at_page_boundary() {
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        // Sweep the window in which the final block load can cross the end of
+        // the mapping, so the case is hit wherever the last line starts.
+        for slack in 0..64 {
+            let total = 2 * page - slack;
+            let content = csv_of_exactly(total);
+            assert_eq!(content.len(), total);
+
+            let expected: Vec<Vec<&str>> = content
+                .strip_suffix('\n')
+                .unwrap()
+                .split('\n')
+                .map(|line| line.split(',').collect())
+                .collect();
+
+            let mut p = Parser::new(default_dialect(), reader_from_str(&content));
+            let mut seen = 0;
+            while let Some(record) = p.read_line() {
+                assert!(seen < expected.len(), "{total}-byte file: too many records");
+                assert_eq!(record, expected[seen], "{total}-byte file, record {seen}");
+                seen += 1;
+            }
+            assert_eq!(seen, expected.len(), "{total}-byte file: records parsed");
+        }
+    }
+
+    /// A newline-terminated CSV of exactly `total` bytes. The final row is
+    /// padded so the file ends on the requested byte, wherever that falls.
+    fn csv_of_exactly(total: usize) -> String {
+        const ROW: &str = "aaaa,bbbb,cccc,dddd\n";
+        assert!(total >= 2 * ROW.len());
+        let mut s = String::with_capacity(total);
+        while s.len() + 2 * ROW.len() <= total {
+            s.push_str(ROW);
+        }
+        // Leaves between ROW.len() and 2*ROW.len() bytes for the final row.
+        let remaining = total - s.len();
+        s.push_str("z,");
+        s.extend(std::iter::repeat('q').take(remaining - 3));
+        s.push('\n');
+        s
     }
 
     #[test]
@@ -138,7 +189,7 @@ mod tests {
                 if let Some(ours) = p.read_line() {
                     counter += 1;
                     for i in 0..ours.len() {
-                        let o = &ours[i];
+                        let o = str::from_utf8(&ours[i]).unwrap();
                         let theirs = str::from_utf8(&theirs[i]).unwrap();
                         if *o != *theirs {
                             dbg!(counter, theirs, &ours);
@@ -150,6 +201,32 @@ mod tests {
                     panic!("Mismatch in number of records ours, at line {}, file {}", counter, path);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_equality_serde_csv_normal_escapes() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        #[allow(dead_code)] // not reading anything, just deserializing
+        struct Play {
+            gameid: String,
+            qtr: u64,
+            off: String,
+            def: String,
+            description: String,
+            offscore: u64,
+            defscore: u64,
+            season: u64,
+        }
+        let path = "examples/nfl.csv";
+        let file = File::open(path).unwrap();
+        let mut our_reader = SerdeReader::<Play>::new(default_dialect(), &file);
+        let file2 = File::open(path).unwrap();
+        let mut csv_reader = csv::ReaderBuilder::new().escape(Some(b'"')).from_reader(file2);
+        let mut counter = 0;
+        for (theirs, ours) in csv_reader.deserialize::<Play>().zip(our_reader.into_iter()) {
+            assert_eq!(theirs.unwrap(), ours.unwrap(), "Mismatch at record {}", counter);
+            counter += 1;
         }
     }
 }
