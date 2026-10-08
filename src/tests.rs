@@ -24,6 +24,15 @@ mod tests {
     }
 
     #[test]
+    fn test_last_line_without_newline() {
+        let mut p = Parser::new(default_dialect(), reader_from_str("a,b\n1,2\n3,4"));
+        assert_eq!(p.read_line().unwrap(), vec!["a", "b"]);
+        assert_eq!(p.read_line().unwrap(), vec!["1", "2"]);
+        assert_eq!(p.read_line().unwrap(), vec!["3", "4"]);
+        assert!(p.read_line().is_none());
+    }
+
+    #[test]
     fn test_multi_line_parsing() {
         let line = "1,2,30,\"300, 400\",4\n\
         1,2,30,\"300, 400\",4\n";

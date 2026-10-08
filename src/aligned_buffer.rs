@@ -68,6 +68,11 @@ impl AlignedBuffer {
         self.line_start = self.start;
     }
 
+    /// The current line when EOF was reached before a line terminator.
+    pub fn get_tail_slice(&self) -> &[u8] {
+        &self.mmap[self.line_start..self.start]
+    }
+
     pub fn get_line_slice(&mut self) -> &[u8] {
         let ret = &self.mmap[self.line_start..self.start];
         if self.mmap[self.start] == b'\r' {
