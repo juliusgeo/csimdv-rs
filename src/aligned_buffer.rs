@@ -97,7 +97,6 @@ impl Drop for AlignedBuffer {
 #[cfg(test)]
 mod buftests {
     use crate::aligned_buffer::AlignedBuffer;
-    use crate::constants::CHUNK_SIZE;
     use std::io::{Write};
     fn reader_from_str(s: &str) -> AlignedBuffer {
         let mut f = tempfile::NamedTempFile::new().unwrap();

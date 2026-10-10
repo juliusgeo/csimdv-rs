@@ -122,7 +122,6 @@ impl Parser {
             off += n;
             self.bufreader.consume(n);
         }
-        None
     }
     pub fn read_line(&mut self) -> Option<Record<'_>> {
         self.process_buffer_chunks()

@@ -159,16 +159,12 @@ impl<'a, 'de: 'a> Deserializer<'de> for &'a mut RecordDeserializer<'de> {
     }
 
     fn deserialize_string<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeError> {
-        let mut field = str::from_utf8(self.next_field()?).unwrap();
+        let field = str::from_utf8(self.next_field()?).unwrap();
         match self.dialect {
             Some(d) => {
-                if d.escape == true {
-                    if field.starts_with(&d.quotechar.to_string()) {
-                        let mut field = field.replace(&self.escape_combo, &d.quotechar.to_string());
-                        visitor.visit_str(&field[1..field.len()-1])
-                    } else {
-                        visitor.visit_str(field)
-                    }
+                if d.escape == true && field.starts_with(&d.quotechar.to_string()) {
+                    let field = field.replace(&self.escape_combo, &d.quotechar.to_string());
+                    visitor.visit_str(&field[1..field.len()-1])
                 } else {
                     visitor.visit_str(field)
                 }

@@ -229,7 +229,7 @@ mod tests {
         }
         let path = "examples/nfl.csv";
         let file = File::open(path).unwrap();
-        let mut our_reader = SerdeReader::<Play>::new(default_dialect(), &file);
+        let our_reader = SerdeReader::<Play>::new(default_dialect(), &file);
         let file2 = File::open(path).unwrap();
         let mut csv_reader = csv::ReaderBuilder::new().escape(Some(b'"')).from_reader(file2);
         let mut counter = 0;
