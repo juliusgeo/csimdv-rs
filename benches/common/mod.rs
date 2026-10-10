@@ -1,5 +1,3 @@
-pub mod csv_gen;
-mod config;
 
 use simd_csv::ZeroCopyReader;
 use csimdv::default_dialect;
