@@ -74,7 +74,10 @@ impl Parser {
 
     fn reset_line_state(&mut self) {
         self.delimiters.clear();
-        self.delimiters.push(0);
+        // the separator before the first field
+        // when iterating, we subtract one from the first of the delimiter pairs,
+        // wrapping_sub from MAX is 0
+        self.delimiters.push(usize::MAX);
         self.bufreader.start_line();
         self.inside_quotes = false;
     }
@@ -97,15 +100,13 @@ impl Parser {
             let (delimiter_locations, quote_locations, newline_locations) = self.classifier.classify(chunk);
             let (mut delimiter_offsets,  newline_offsets, ends_inside_quotes) = Self::chunk_delimiter_offsets(quote_locations, newline_locations, delimiter_locations, self.inside_quotes);
             let first_newline = newline_offsets.trailing_zeros() as usize;
+            // only the delimiters before the first newline (all of them when there is none)
+            delimiter_offsets &= (newline_offsets & newline_offsets.wrapping_neg()).wrapping_sub(1);
             // iterate over the offsets
             while delimiter_offsets != 0 {
                 let pos = delimiter_offsets.trailing_zeros() as usize;
-                if pos >= first_newline {
-                    break
-                }
                 delimiter_offsets &= delimiter_offsets - 1;
-                // +1 to include the comma, otherwise the offsets become misaligned
-                self.delimiters.push(pos + off + 1);
+                self.delimiters.push(pos + off);
             }
             if first_newline != CHUNK_SIZE && first_newline <= n {
                 self.delimiters.push(first_newline + off);
@@ -124,6 +125,6 @@ impl Parser {
         None
     }
     pub fn read_line(&mut self) -> Option<Record<'_>> {
-        return self.process_buffer_chunks();
+        self.process_buffer_chunks()
     }
 }

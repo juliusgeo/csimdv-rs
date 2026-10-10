@@ -14,9 +14,11 @@ impl AlignedBuffer {
     pub fn new(file: &std::fs::File) -> std::io::Result<Self> {
         let len = file.metadata()?.len() as usize;
         let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-        // The file rounded up to a page, plus one more chunk of zeros.
-        // Do this so that if a chunk is less than CHUNK_SIZE from the final page,
+        // the file rounded up to a page, plus one more chunk of zeros.
+        // do this so that if a chunk is less than CHUNK_SIZE from the final page,
         // it doesn't panic (the chunk would extend past the page otherwise).
+        //
+        // we map the file onto the start of the first map, so that reads past the end of the file do not fault.
         let map_len = len.next_multiple_of(page) + CHUNK_SIZE;
 
         let base = unsafe {
@@ -34,9 +36,7 @@ impl AlignedBuffer {
         }
 
         if len > 0 {
-            // Replace the front of the reservation with the file. MAP_SHARED
-            // matches what memmap2 uses for a read-only map; MAP_PRIVATE here
-            // costs a few percent in copy-on-write bookkeeping.
+            // replace the front of the reservation with the file.
             let mapped = unsafe {
                 libc::mmap(
                     base,
@@ -52,7 +52,9 @@ impl AlignedBuffer {
                 unsafe { libc::munmap(base, map_len) };
                 return Err(err);
             }
-            unsafe { libc::madvise(base, len, libc::MADV_SEQUENTIAL) };
+            // we're going to be iterating over the file sequentially, and assume
+            // we will need the entire thing.
+            unsafe { libc::madvise(base, len, libc::MADV_SEQUENTIAL | libc::MADV_WILLNEED) };
         }
         // make a slice now to avoid having to do this on every access
         let mmap = unsafe { std::slice::from_raw_parts(base as *const u8, len) };
@@ -68,7 +70,6 @@ impl AlignedBuffer {
         self.line_start = self.start;
     }
 
-    /// The current line when EOF was reached before a line terminator.
     pub fn get_tail_slice(&self) -> &[u8] {
         &self.mmap[self.line_start..self.start]
     }

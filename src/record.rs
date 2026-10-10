@@ -8,18 +8,18 @@ pub struct Record<'a> {
 
 impl<'a> Record<'a> {
     pub fn new(slice: &'a [u8], offsets: &'a [usize]) -> Self {
-        return Record {
+        Record {
             data: slice,
             offsets: offsets,
         }
     }
 
     pub fn len(&self) -> usize {
-        return self.offsets.len()-1;
+        self.offsets.len()-1
     }
 
     pub fn iter(&'a mut self) -> RecordIterator<'a> {
-        return RecordIterator::new(self);
+        RecordIterator::new(self)
     }
 }
 impl<'a> fmt::Debug for Record<'_> {
@@ -36,11 +36,7 @@ impl<'a> fmt::Debug for Record<'_> {
 impl<'a> Index<usize> for Record<'a> {
     type Output = [u8];
     fn index(&self, index: usize) -> &Self::Output {
-        let (start, mut end) = (self.offsets[index], self.offsets[index+1]);
-        if index < self.len() - 1 {
-            end -= 1;
-        }
-        &self.data[start..end]
+        &self.data[self.offsets[index].wrapping_add(1)..self.offsets[index + 1]]
     }
 }
 
@@ -54,20 +50,20 @@ impl<'a> PartialEq<Vec<&str>> for Record<'a> {
                 return false
             }
         }
-        return true
+        true
     }
 }
 
 pub struct RecordIterator<'a> {
-    record: &'a Record<'a>,
-    current_field: usize,
+    data: &'a [u8],
+    separators: std::slice::Windows<'a, usize>,
 }
 
 impl<'a> RecordIterator<'a> {
     pub fn new(record: &'a Record<'a>) -> RecordIterator<'a> {
-        return RecordIterator {
-            record: record,
-            current_field: 0,
+        RecordIterator {
+            data: record.data,
+            separators: record.offsets.windows(2),
         }
     }
 }
@@ -75,12 +71,6 @@ impl<'a> RecordIterator<'a> {
 impl<'a> Iterator for RecordIterator<'a> {
     type Item = &'a [u8];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_field >= self.record.len() - 1 {
-            return None
-        }
-        let index = self.current_field;
-        let (start, end) = (self.record.offsets[index], self.record.offsets[index + 1]);
-        self.current_field += 1;
-        Some(&self.record.data[start..end])
+        self.separators.next().map(|w| &self.data[w[0].wrapping_add(1)..w[1]])
     }
 }
