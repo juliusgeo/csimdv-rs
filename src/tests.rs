@@ -106,14 +106,18 @@ mod tests {
         assert_eq!(str::from_utf8(&record[record.len() -1]).unwrap(), "2012");
     }
 
-    /// A CSV whose bytes end at, or just short of, a page boundary.
+    /// A CSV whose bytes end at, or just short of, a page boundary (mmap) or
+    /// the end of the read buffer (Windows).
     ///
     /// `classify` always loads a full `CHUNK_SIZE` block, so the load covering
-    /// the last line of such a file reaches past the end of the mapping.
+    /// the last line of such a file reaches past the end of the backing memory.
     /// Without the zero-padded tail chunk this faults rather than failing.
     #[test]
     fn test_parse_file_ending_at_page_boundary() {
-        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        #[cfg(not(windows))]
+        let page = crate::map::mmap::page_size();
+        #[cfg(windows)]
+        let page = crate::constants::BUFFER_SIZE;
         // Sweep the window in which the final block load can cross the end of
         // the mapping, so the case is hit wherever the last line starts.
         for slack in 0..64 {

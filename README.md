@@ -52,18 +52,17 @@ Ran on an Apple M1 Max with 64GB of RAM.
 
 | Library | customers-2000000.csv | EDW.TEST_CAL_DT.csv | nfl.csv      |
 |---------|-----------------------|---------------------|--------------|
-| csv     | 599.41 MiB/s          | 827.44 MiB/s        | 643.78 MiB/s |
-| simdcsv | 1.69 GiB/s            | 2.03 GiB/s          | 2.04 GiB/s   |
-| csimdv  | 2.32 GiB/s            | 2.46 GiB/s          | 2.73 GiB/s   |
-
+| csv     | 563.29 MiB/s          | 774.34 MiB/s        | 601.27 MiB/s |
+| simdcsv | 1.67 GiB/s            | 2.06 GiB/s          | 1.95 GiB/s   |
+| csimdv  | 3.86 GiB/s            | 3.85 GiB/s          | 4.35 GiB/s   |
 
 ### `x86_64 AVX-2`
 
-| Library | customers-2000000.csv | EDW.TEST_CAL_DT.csv  | nfl.csv      |
-|---------|-----------------------|----------------------|--------------|
-| csv     | 591.84 MiB/s          | 786.63 MiB/s         | 613.77 MiB/s |
-| simdcsv | 1.70 GiB/s            | 2.10 GiB/s           | 2.07 GiB/s   |
-| csimdv  | 2.32 GiB/s            | 2.44 GiB/s           | 2.60 GiB/s   |
+| Library | customers-2000000.csv | EDW.TEST_CAL_DT.csv | nfl.csv      |
+|---------|-----------------------|---------------------|--------------|
+| csv     | 584.94 MiB/s          | 951.76 MiB/s        | 604.34 MiB/s |
+| simdcsv | 1.69 GiB/s            | 2.06 GiB/s          | 2.06 GiB/s   |
+| csimdv  | 3.77 GiB/s            | 3.88 GiB/s          | 4.33 GiB/s   |
 
 
 Ran on an AMD Ryzen 7 9800x3d with 32GB of RAM, with `RUSTFLAGS="-C target-cpu=native -C target-feature=-avx512f"` for AVX2.

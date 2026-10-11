@@ -29,6 +29,7 @@ pub(crate) mod prefix_xor {
 #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
 pub(crate) mod simd {
     use core::arch::x86_64::*;
+    use crate::Dialect;
 
     pub struct Classifier {
         comma_splat: __m512i,
@@ -37,12 +38,12 @@ pub(crate) mod simd {
         return_splat: __m512i
     }
     impl Classifier {
-        pub fn new() -> Self {
+        pub fn new(dialect: Dialect) -> Self {
             Self {
-                comma_splat: unsafe { _mm512_set1_epi8(',' as i8) },
+                comma_splat: unsafe { _mm512_set1_epi8(dialect.delimiter as u8 as i8) },
                 newline_splat: unsafe { _mm512_set1_epi8('\n' as i8) },
                 return_splat: unsafe { _mm512_set1_epi8('\r' as i8) },
-                quote_splat: unsafe { _mm512_set1_epi8('\"' as i8) },
+                quote_splat: unsafe { _mm512_set1_epi8(dialect.quotechar as u8 as i8) },
             }
         }
 
@@ -61,6 +62,7 @@ pub(crate) mod simd {
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2", not(target_feature="avx512f")))]
 pub(crate) mod simd {
     use core::arch::x86_64::*;
+    use crate::Dialect;
 
     pub struct Classifier {
         comma_splat: (__m256i, __m256i),
@@ -80,13 +82,13 @@ pub(crate) mod simd {
 
     impl Classifier {
         #[inline(always)]
-        pub fn new() -> Self {
+        pub fn new(dialect: Dialect) -> Self {
             unsafe {
                 Self {
-                    comma_splat: load_simd([b','; 64].as_ptr()),
+                    comma_splat: load_simd([dialect.delimiter as u8; 64].as_ptr()),
                     newline_splat: load_simd([b'\n'; 64].as_ptr()),
                     return_splat: load_simd([b'\r'; 64].as_ptr()),
-                    quote_splat: load_simd([b'\"'; 64].as_ptr()),
+                    quote_splat: load_simd([dialect.quotechar as u8; 64].as_ptr()),
                 }
             }
         }
