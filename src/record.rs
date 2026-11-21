@@ -1,5 +1,6 @@
 use std::ops::Index;
 use std::fmt;
+use std::str;
 
 pub struct Record<'a> {
     data: &'a [u8],

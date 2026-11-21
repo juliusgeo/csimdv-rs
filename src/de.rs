@@ -2,6 +2,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 use std::num;
+use std::str;
 
 use serde::de::value::BorrowedStrDeserializer;
 use serde::de::{

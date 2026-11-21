@@ -1,5 +1,3 @@
-#![feature(test)]
-
 mod arch;
 mod constants;
 mod tests;
@@ -14,5 +12,3 @@ mod map;
 
 pub use parser::{Dialect, Parser, default_dialect};
 pub use reader::{ByteReader, SerdeReader};
-
-extern crate test;
